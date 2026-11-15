@@ -21,31 +21,34 @@ Commands that talk to the adapter are grouped under `mempak adapter`. All other
 commands work offline on image files.
 
 ```
-mempak adapter detect                 Show adapters, ports, controllers and mempak presence
-mempak adapter read [OUTFILE]         Read the mempak to an image file (hex dump if no file)
-mempak adapter write INFILE           Write an image file to the mempak
-mempak adapter erase                  Erase the mempak
+mempak adapter detect [-v]                                Show adapters, ports, controllers and mempak presence
+mempak adapter read [OPTIONS] [-f FMT] [OUTFILE]          Read the mempak to an image file (hex dump if no file)
+mempak adapter write [OPTIONS] [-y] [--verify] INFILE     Write an image file to the mempak
+mempak adapter erase [OPTIONS] [-y] [--fill-ff]           Erase the mempak
 
-mempak ls PAKFILE                     List notes
-mempak rm PAKFILE NOTE                Delete a note
-mempak extract PAKFILE NOTE OUTFILE   Export a note to a note file
-mempak insert PAKFILE NOTEFILE        Import a note file
-mempak format OUTFILE                 Create an empty image
-mempak convert INFILE OUTFILE         Convert between image formats
+mempak ls [-v] PAKFILE                                    List notes
+mempak rm PAKFILE NOTE                                    Delete a note
+mempak extract PAKFILE NOTE OUTFILE                       Export a note to a note file
+mempak insert [-s N | -d N] [-c TEXT] PAKFILE NOTEFILE    Import a note file
+mempak format [-f FMT] OUTFILE                            Create an empty image
+mempak convert [-f FMT] INFILE OUTFILE                    Convert between image formats
 ```
 
 Run `mempak COMMAND --help` or `mempak adapter COMMAND --help` for each command's options.
 
 ### Adapter options
 
+`OPTIONS` above stands for any of `-s`, `-c` and `-v`, which `read`, `write` and `erase` share.
+
 | Option | Meaning |
 |---|---|
 | `-s, --serial SERIAL` | Choose an adapter by serial number. By default the first adapter found is used. |
 | `-c, --channel N` | Controller port, starting at 0. The default is 0. |
+| `-v, --verbose` | Show detailed USB output (also accepted by `detect`, which then shows device paths too). |
+| `-f, --format FMT` | Image format for `read` (see [Image formats](#image-formats)). |
 | `-y, --yes` | Skip the confirmation prompt (`write`, `erase`). |
 | `--verify` | Read the pak back after `write` and compare it with the file. |
 | `--fill-ff` | Make `erase` fill the pak with 0xFF instead of writing a blank filesystem. |
-| `-v, --verbose` | Show detailed USB output. |
 
 By default, `erase` writes a blank formatted filesystem and checks it by reading
 it back, so games can use the pak straight away. `--fill-ff` wipes every byte
@@ -62,10 +65,18 @@ instead, and a game will then need to format the pak before using it.
 Use `-f FMT` with `read`, `format` and `convert` to choose a different format.
 Commands that edit a file in place (`rm`, `insert`) keep the file's existing format.
 
+### Note options
+
 Note slots are numbered 0–15, as shown by `mempak ls`.
-`mempak insert` puts the note in the first free slot unless you give one of these options:
-- `-s N` writes to slot N, whether or not it is empty.
-- `-d N` replaces the note in slot N, which must not be empty.
+
+| Option | Meaning |
+|---|---|
+| `ls -v, --verbose` | Also show each note's game code, publisher code and region. |
+| `insert -s, --slot N` | Write the note to slot N, whether or not it is empty. |
+| `insert -d, --dst N` | Replace the note in slot N, which must not be empty. |
+| `insert -c, --comment TEXT` | Store a comment with the note (up to 255 characters; `.n64` images only, ignored with a warning otherwise). |
+
+Without `-s` or `-d`, `insert` puts the note in the first free slot. `-s` and `-d` can't be used together.
 
 ### Example
 
