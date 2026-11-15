@@ -20,13 +20,13 @@ func testNote(nblocks int, seed byte) []byte {
 	return b
 }
 
-func insert(t *testing.T, img *Image, note []byte, slot int, replaceOnly bool) int {
+func insert(t *testing.T, img *Image, note []byte, slot int) int {
 	t.Helper()
 	h, d, err := ParseNoteFile(note)
 	if err != nil {
 		t.Fatal(err)
 	}
-	used, err := img.InsertNote(h, d, slot, replaceOnly)
+	used, err := img.InsertNote(h, d, slot)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,10 +67,10 @@ func TestInsertExtractDelete(t *testing.T) {
 	img := New()
 	note := testNote(2, 3)
 
-	if used := insert(t, img, note, -1, false); used != 0 {
+	if used := insert(t, img, note, -1); used != 0 {
 		t.Fatalf("auto slot = %d", used)
 	}
-	if used := insert(t, img, testNote(3, 9), 5, false); used != 5 {
+	if used := insert(t, img, testNote(3, 9), 5); used != 5 {
 		t.Fatalf("slot = %d", used)
 	}
 	if free, _ := img.FreeBlocks(); free != TotalBlocks-5 {
@@ -90,12 +90,8 @@ func TestInsertExtractDelete(t *testing.T) {
 		t.Fatalf("export differs: %v", err)
 	}
 
-	// -d onto an empty slot fails; replacing an existing note frees its blocks.
-	h, d, _ := ParseNoteFile(note)
-	if _, err := img.InsertNote(h, d, 9, true); !errors.Is(err, ErrSlotEmpty) {
-		t.Fatalf("replace empty slot: %v", err)
-	}
-	insert(t, img, note, 5, true)
+	// Replacing an existing note frees its blocks.
+	insert(t, img, note, 5)
 	if free, _ := img.FreeBlocks(); free != TotalBlocks-4 {
 		t.Fatalf("free after replace = %d", free)
 	}
@@ -118,7 +114,7 @@ func TestBlockAllocationOrder(t *testing.T) {
 	// The lowest free blocks are taken and linked in reverse, as in
 	// libdragon: a 3-block note on a blank pak uses 7 -> 6 -> 5.
 	img := New()
-	insert(t, img, testNote(3, 0), -1, false)
+	insert(t, img, testNote(3, 0), -1)
 	n, _ := img.Note(0)
 	if n.inode() != 7 {
 		t.Fatalf("inode = %d", n.inode())
@@ -136,24 +132,24 @@ func TestBlockAllocationOrder(t *testing.T) {
 
 func TestNoSpace(t *testing.T) {
 	img := New()
-	insert(t, img, testNote(100, 0), -1, false)
+	insert(t, img, testNote(100, 0), -1)
 	h, d, _ := ParseNoteFile(testNote(24, 0))
-	if _, err := img.InsertNote(h, d, -1, false); !errors.Is(err, ErrNoSpace) {
+	if _, err := img.InsertNote(h, d, -1); !errors.Is(err, ErrNoSpace) {
 		t.Fatalf("got %v", err)
 	}
 	img = New()
 	for i := range NumNotes {
-		insert(t, img, testNote(1, byte(i)), -1, false)
+		insert(t, img, testNote(1, byte(i)), -1)
 	}
 	h, d, _ = ParseNoteFile(testNote(1, 0))
-	if _, err := img.InsertNote(h, d, -1, false); !errors.Is(err, ErrNoSpace) {
+	if _, err := img.InsertNote(h, d, -1); !errors.Is(err, ErrNoSpace) {
 		t.Fatalf("all slots used: %v", err)
 	}
 }
 
 func TestCorruptChain(t *testing.T) {
 	img := New()
-	insert(t, img, testNote(2, 0), -1, false)
+	insert(t, img, testNote(2, 0), -1)
 	for _, s := range []int{1, 2} {
 		sec := img.sector(s)
 		sec[6<<1|1] = 6 // block 6 points to itself: a loop
@@ -188,7 +184,7 @@ func TestParseNoteFileErrors(t *testing.T) {
 
 func TestFormats(t *testing.T) {
 	img := New()
-	insert(t, img, testNote(2, 1), -1, false)
+	insert(t, img, testNote(2, 1), -1)
 	img.Comments[0] = "hello world"
 
 	for _, f := range []Format{FormatMPK, FormatMPK4, FormatN64} {

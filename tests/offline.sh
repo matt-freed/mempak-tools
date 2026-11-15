@@ -67,9 +67,13 @@ pass "insert"
 # insert into a specific slot
 "$MEMPAK" insert -s 5 pak.mpk test.note > /dev/null
 "$MEMPAK" ls pak.mpk | grep -q "Note  5: TEST" || fail "insert -s 5: note 5 should be TEST"
-# -d requires an existing note
-if "$MEMPAK" insert -d 9 pak.mpk test.note >/dev/null 2>&1; then fail "insert -d onto empty slot should fail"; fi
-pass "insert --slot / --dst"
+# an occupied slot needs confirmation or --overwrite
+if echo n | "$MEMPAK" insert -s 5 pak.mpk test.note >/dev/null 2>&1; then fail "insert -s onto a used slot should fail when declined"; fi
+echo y | "$MEMPAK" insert -s 5 pak.mpk test.note > /dev/null 2>&1 || fail "insert -s onto a used slot should succeed when confirmed"
+"$MEMPAK" insert -s 5 --overwrite pak.mpk test.note < /dev/null > /dev/null || fail "insert -s --overwrite should not ask"
+"$MEMPAK" ls pak.mpk | grep -q "Blocks used: 4 / 123" || fail "insert -s: overwriting should free the old note's blocks"
+if "$MEMPAK" insert --overwrite pak.mpk test.note >/dev/null 2>&1; then fail "--overwrite without -s should be rejected"; fi
+pass "insert --slot / --overwrite"
 
 # extract and compare
 "$MEMPAK" extract pak.mpk 5 out.note > /dev/null

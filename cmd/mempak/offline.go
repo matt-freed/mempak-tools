@@ -104,7 +104,7 @@ func newLsCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "also show game code, publisher code and region")
+	cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "also show game and publisher codes")
 	return cmd
 }
 
@@ -170,29 +170,25 @@ func newExtractCmd() *cobra.Command {
 }
 
 func newInsertCmd() *cobra.Command {
-	var slotStr, dstStr, comment string
+	var slotStr, comment string
+	var overwrite bool
 	cmd := &cobra.Command{
 		Use:   "insert PAKFILE NOTEFILE",
 		Short: "Import a note file",
 		Long: "Import a note file into a mempak image. The image file is modified in place.\n" +
-			"Without -d or -s the note goes to the first free slot.",
+			"Without -s the note goes to the first free slot. With -s N, if slot N already\n" +
+			"holds a note you are asked before it is replaced, unless --overwrite is given.",
 		Args: args(cobra.ExactArgs(2)),
 		RunE: func(cmd *cobra.Command, a []string) error {
 			flags := cmd.Flags()
-			if flags.Changed("slot") && flags.Changed("dst") {
-				return usagef("use either -d or -s, not both")
-			}
-			slot, replaceOnly := -1, false
-			var err error
-			switch {
-			case flags.Changed("slot"):
-				slot, err = parseSlot(slotStr)
-			case flags.Changed("dst"):
-				slot, err = parseSlot(dstStr)
-				replaceOnly = true
-			}
-			if err != nil {
-				return err
+			slot := -1
+			if flags.Changed("slot") {
+				var err error
+				if slot, err = parseSlot(slotStr); err != nil {
+					return err
+				}
+			} else if overwrite {
+				return usagef("--overwrite needs a slot (-s N)")
 			}
 			if len(comment) > mempak.MaxCommentLen {
 				return usagef("comment too long (%d characters max.)", mempak.MaxCommentLen)
@@ -212,13 +208,13 @@ func newInsertCmd() *cobra.Command {
 			}
 			if slot >= 0 {
 				if old, err := img.Note(slot); err == nil && old.Valid {
+					if !overwrite && !confirm(cmd.Context(), fmt.Sprintf("Slot %d holds note '%s'. Overwrite it?", slot, old.Name())) {
+						return errors.New("cancelled")
+					}
 					fmt.Fprintf(stdout, "Overwriting note %d\n", slot)
 				}
 			}
-			used, err := img.InsertNote(header, data, slot, replaceOnly)
-			if errors.Is(err, mempak.ErrSlotEmpty) {
-				err = fmt.Errorf("no note in slot %d", slot)
-			}
+			used, err := img.InsertNote(header, data, slot)
 			if err != nil {
 				return fmt.Errorf("could not import note '%s': %w", a[1], err)
 			}
@@ -237,8 +233,8 @@ func newInsertCmd() *cobra.Command {
 		},
 	}
 	f := cmd.Flags()
-	f.StringVarP(&slotStr, "slot", "s", "", "write to note slot `N` (0-15), empty or not")
-	f.StringVarP(&dstStr, "dst", "d", "", "overwrite note slot `N` (0-15); the slot must not be empty")
+	f.StringVarP(&slotStr, "slot", "s", "", "write to note slot `N` (0-15)")
+	f.BoolVarP(&overwrite, "overwrite", "o", false, "replace the note already in the -s slot without asking")
 	f.StringVarP(&comment, "comment", "c", "", "note comment `TEXT` (only stored in .n64 images)")
 	return cmd
 }

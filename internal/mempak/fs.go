@@ -316,12 +316,12 @@ func (img *Image) DeleteNote(slot int) error {
 // must be a whole number of blocks.
 //
 // With slot set to -1 the note goes to the first free slot. Otherwise it goes
-// to that slot, replacing any note already there; if replaceOnly is set the
-// slot must already hold a note. The header is stored as is apart from the
-// inode, so the note keeps its game code, publisher code and name.
+// to that slot, replacing any note already there. The header is stored as is
+// apart from the inode, so the note keeps its game code, publisher code and
+// name.
 //
 // It returns the slot used.
-func (img *Image) InsertNote(header [noteHeaderSize]byte, data []byte, slot int, replaceOnly bool) (int, error) {
+func (img *Image) InsertNote(header [noteHeaderSize]byte, data []byte, slot int) (int, error) {
 	if slot < -1 || slot >= NumNotes {
 		return 0, ErrBadSlot
 	}
@@ -343,8 +343,6 @@ func (img *Image) InsertNote(header [noteHeaderSize]byte, data []byte, slot int,
 		// Overwriting a note releases its blocks.
 		if old := img.note(&t, slot); old.Valid {
 			free += old.Blocks
-		} else if replaceOnly {
-			return 0, ErrSlotEmpty
 		}
 	} else {
 		slot = -1

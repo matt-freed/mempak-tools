@@ -29,7 +29,7 @@ mempak adapter erase [OPTIONS] [-y] [--fill-ff]           Erase the mempak
 mempak ls [-v] PAKFILE                                    List notes
 mempak rm PAKFILE NOTE                                    Delete a note
 mempak extract PAKFILE NOTE OUTFILE                       Export a note to a note file
-mempak insert [-s N | -d N] [-c TEXT] PAKFILE NOTEFILE    Import a note file
+mempak insert [-s N [-o]] [-c TEXT] PAKFILE NOTEFILE      Import a note file
 mempak format [-f FMT] OUTFILE                            Create an empty image
 mempak convert [-f FMT] INFILE OUTFILE                    Convert between image formats
 ```
@@ -71,12 +71,14 @@ Note slots are numbered 0–15, as shown by `mempak ls`.
 
 | Option | Meaning |
 |---|---|
-| `ls -v, --verbose` | Also show each note's game code, publisher code and region. |
-| `insert -s, --slot N` | Write the note to slot N, whether or not it is empty. |
-| `insert -d, --dst N` | Replace the note in slot N, which must not be empty. |
+| `ls -v, --verbose` | Also show each note's game code (its last character is the region) and publisher code. |
+| `insert -s, --slot N` | Write the note to slot N. If the slot already holds a note, you are asked before it is replaced. |
+| `insert -o, --overwrite` | With `-s`, replace an existing note without asking. |
 | `insert -c, --comment TEXT` | Store a comment with the note (up to 255 characters; `.n64` images only, ignored with a warning otherwise). |
 
-Without `-s` or `-d`, `insert` puts the note in the first free slot. `-s` and `-d` can't be used together.
+Without `-s`, `insert` puts the note in the first free slot. In scripts, where there is
+nobody to answer the question, use `--overwrite` to replace a note: an unanswered prompt
+counts as "no" and the command fails.
 
 ### Example
 
