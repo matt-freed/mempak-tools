@@ -5,8 +5,15 @@ A small command-line tool for N64 Controller Paks (mempaks) using a
 pak through the adapter, and manage the saves (notes) inside pak image files.
 
 This is a focused extraction of the mempak features from raphnet's
-[gcn64tools](https://www.raphnet.net/programmation/gcn64tools/index_en.php).
+[gcn64tools](https://www.raphnet.net/programmation/gcn64tools/index_en.php), ported to Go.
 The GUI and support for other controllers and accessories have been removed.
+
+Why: Mostly it was a fun project for me. If you only need the mempak functionality of the adapter,
+this Go port provides easier cross-compilation and a single static binary, with no hidapi,
+libudev or other libraries to install. A simpler focused CLI can be easier to use, and several
+bug fixes and enhancements are provided. 
+
+Many thanks to raphnet for designing the adapter hardware and its firmware, and for releasing gcn64tools as open source. 
 
 ## Usage
 
