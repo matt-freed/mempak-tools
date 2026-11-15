@@ -11,6 +11,16 @@ cd "$WORK"
 fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "ok - $*"; }
 
+# Byte-compare two files. Uses cmp when available; otherwise falls back to
+# cksum (coreutils), since some environments (e.g. a minimal MSYS2) lack cmp.
+same_file() {
+	if command -v cmp >/dev/null 2>&1; then
+		cmp -s "$1" "$2"
+	else
+		[ "$(cksum < "$1")" = "$(cksum < "$2")" ]
+	fi
+}
+
 # Build a 2-block note file in the bryc/mempak export format:
 # 32-byte note header with inode 0xCAFE, followed by 2 x 256 data bytes.
 #   game code "NSM", region 'E', publisher "01", name "TEST" (N64 charset)
@@ -63,7 +73,7 @@ pass "insert --slot / --dst"
 
 # extract and compare
 "$MEMPAK" extract pak.mpk 5 out.note > /dev/null
-cmp -s test.note out.note || fail "extract: exported note differs from original"
+same_file test.note out.note || fail "extract: exported note differs from original"
 if "$MEMPAK" extract pak.mpk 3 bad.note >/dev/null 2>&1; then fail "extract of empty slot should fail"; fi
 if "$MEMPAK" extract pak.mpk 16 bad.note >/dev/null 2>&1; then fail "extract of slot 16 should fail"; fi
 pass "extract"
@@ -83,7 +93,7 @@ pass "rm"
 "$MEMPAK" convert pak.n64 back.mpk > /dev/null
 [ "$(wc -c < back.mpk | tr -d ' ')" = 32768 ] || fail "convert: mpk should be 32768 bytes"
 "$MEMPAK" extract back.mpk 1 rt.note > /dev/null
-cmp -s test.note rt.note || fail "convert: note changed across mpk->n64->mpk"
+same_file test.note rt.note || fail "convert: note changed across mpk->n64->mpk"
 pass "convert"
 
 # argument validation
