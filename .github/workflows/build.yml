@@ -1,11 +1,11 @@
 name: Build
 
-# - Pull requests: build + test only.
-# - Push to main: build + test, then publish a new versioned release.
+# - Pull requests: test and package only.
+# - Push to main: test and package, then publish a new versioned release.
 #
 # Release versions are <major>.<minor>.<run number>: major.minor come from
-# project(... VERSION x.y.z) in CMakeLists.txt, and the patch is this
-# workflow's run number, so every release is numbered higher than the last.
+# the VERSION file, and the patch is this workflow's run number, so every
+# release is numbered higher than the last.
 on:
   push:
     branches: [ main ]
@@ -21,8 +21,8 @@ jobs:
       - uses: actions/checkout@v4
       - id: v
         run: |
-          base=$(grep -oE 'project\(mempak VERSION [0-9]+\.[0-9]+' CMakeLists.txt | grep -oE '[0-9]+\.[0-9]+$')
-          if [ -z "$base" ]; then echo "Could not read version from CMakeLists.txt" >&2; exit 1; fi
+          base=$(grep -oE '^[0-9]+\.[0-9]+$' VERSION)
+          if [ -z "$base" ]; then echo "VERSION must contain <major>.<minor>" >&2; exit 1; fi
           version="$base.${{ github.run_number }}"
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             version="$version-pr${{ github.event.number }}"
@@ -30,83 +30,77 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "Version: $version"
 
-  unix:
-    needs: version
+  test:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: macos-latest
-            package: mempak-macos-universal
-            # Quoted so the ';' survives the shell.
-            cmake_extra: '"-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64"'
-          - os: ubuntu-latest
-            package: mempak-linux-x86_64
-            cmake_extra: ""
+        os: [ ubuntu-latest, macos-latest, windows-latest ]
     runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install dependencies (Linux)
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libudev-dev pkg-config
-      - name: Configure
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release ${{ matrix.cmake_extra }} -DMEMPAK_VERSION=${{ needs.version.outputs.version }}
-      - name: Build
-        run: cmake --build build
-      - name: Test
-        run: ctest --test-dir build --output-on-failure
-      - name: Package
-        run: |
-          build/mempak --version
-          mkdir -p "pkg/${{ matrix.package }}"
-          cp build/mempak README.md LICENSE "pkg/${{ matrix.package }}/"
-          if [ "$RUNNER_OS" = "Linux" ]; then cp scripts/10-raphnet.rules "pkg/${{ matrix.package }}/"; fi
-          # tar keeps the executable bit, which upload-artifact would drop.
-          tar -C pkg -czf "${{ matrix.package }}.tar.gz" "${{ matrix.package }}"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.package }}
-          path: ${{ matrix.package }}.tar.gz
-
-  windows:
-    needs: version
-    runs-on: windows-latest
-    env:
-      PACKAGE: mempak-windows-x86_64
     defaults:
       run:
-        shell: msys2 {0}
+        shell: bash
+    env:
+      CGO_ENABLED: "0"
     steps:
       - uses: actions/checkout@v4
-      - uses: msys2/setup-msys2@v2
+      - uses: actions/setup-go@v5
         with:
-          msystem: MINGW64
-          install: >-
-            mingw-w64-x86_64-gcc
-            mingw-w64-x86_64-cmake
-            mingw-w64-x86_64-ninja
-            diffutils
-            zip
-      - name: Configure
-        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DMEMPAK_VERSION=${{ needs.version.outputs.version }}
+          go-version-file: go.mod
+      - name: Check formatting
+        if: runner.os == 'Linux'
+        run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+      - run: go vet ./...
+      - run: go test ./...
+      - name: Offline tests
+        run: |
+          go build -o build/ ./cmd/mempak
+          bin="$PWD/build/mempak"
+          [ "$RUNNER_OS" = "Windows" ] && bin="$bin.exe"
+          bash tests/offline.sh "$bin"
+
+  package:
+    needs: [ version, test ]
+    # macOS has lipo for the universal binary; everything else cross-compiles.
+    runs-on: macos-latest
+    env:
+      CGO_ENABLED: "0"
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
       - name: Build
-        run: cmake --build build
-      - name: Test
-        run: ctest --test-dir build --output-on-failure
+        run: |
+          build() { GOOS=$1 GOARCH=$2 go build -trimpath -ldflags "-s -w -X main.version=$VERSION" -o "$3" ./cmd/mempak; }
+          build linux amd64 out/linux/mempak
+          build windows amd64 out/windows/mempak.exe
+          build darwin amd64 out/darwin-amd64/mempak
+          build darwin arm64 out/darwin-arm64/mempak
+          mkdir -p out/macos
+          lipo -create -output out/macos/mempak out/darwin-amd64/mempak out/darwin-arm64/mempak
+          out/macos/mempak --version
       - name: Package
         run: |
-          build/mempak.exe --version
-          mkdir -p "pkg/$PACKAGE"
-          cp build/mempak.exe README.md LICENSE "pkg/$PACKAGE/"
-          (cd pkg && zip -r "../$PACKAGE.zip" "$PACKAGE")
+          pkg() { mkdir -p "pkg/$1"; cp "$2" README.md LICENSE "pkg/$1/"; }
+          pkg mempak-macos-universal out/macos/mempak
+          pkg mempak-linux-x86_64 out/linux/mempak
+          cp scripts/10-raphnet.rules pkg/mempak-linux-x86_64/
+          pkg mempak-windows-x86_64 out/windows/mempak.exe
+          mkdir dist
+          # tar keeps the executable bit, which upload-artifact would drop.
+          tar -C pkg -czf dist/mempak-macos-universal.tar.gz mempak-macos-universal
+          tar -C pkg -czf dist/mempak-linux-x86_64.tar.gz mempak-linux-x86_64
+          (cd pkg && zip -r ../dist/mempak-windows-x86_64.zip mempak-windows-x86_64)
+          ls -l dist
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.PACKAGE }}
-          path: ${{ env.PACKAGE }}.zip
+          name: packages
+          path: dist/*
 
   release:
     # Only after every build and test passed, and never for pull requests.
-    needs: [ version, unix, windows ]
+    needs: [ version, package ]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:

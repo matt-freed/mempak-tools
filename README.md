@@ -92,30 +92,26 @@ xattr -d com.apple.quarantine mempak
 You can also allow it under System Settings → Privacy & Security. This isn't needed if you build from source.
 
 Release versions are numbered `<major>.<minor>.<build>`. The major and minor numbers come from
-`project(mempak VERSION ...)` in `CMakeLists.txt`, and the build number is the CI run number.
-To start a new series (for example 0.2.x), change the version there.
+the `VERSION` file, and the build number is the CI run number.
+To start a new series (for example 0.3.x), change the version there.
 
 ## Building
 
-The only requirements are CMake (3.16 or newer) and a C compiler.
-[hidapi](https://github.com/libusb/hidapi) is included in `third_party/hidapi`.
-
-### macOS
+The only requirement is [Go](https://go.dev/dl/) (see `go.mod` for the version). No C compiler
+or system libraries are needed: USB HID access is implemented in pure Go for each OS.
 
 ```sh
-brew install cmake        # if not already installed
-cmake -S . -B build
-cmake --build build
-ctest --test-dir build    # offline tests, no adapter needed
-sudo cmake --install build   # optional: installs to /usr/local/bin
+go build ./cmd/mempak        # produces ./mempak (mempak.exe on Windows)
+go test ./...                # unit tests, no adapter needed
+bash tests/offline.sh "$PWD/mempak"   # end-to-end offline tests
 ```
 
-### Linux
+To install into `$(go env GOPATH)/bin`, run `go install ./cmd/mempak`.
 
-```sh
-sudo apt install cmake build-essential pkg-config libudev-dev
-cmake -S . -B build && cmake --build build
-```
+Go cross-compiles to every supported platform from any machine, for example
+`GOOS=windows GOARCH=amd64 go build ./cmd/mempak`.
+
+### Linux permissions
 
 To use the adapter without root, install the udev rule and then reconnect the adapter:
 
@@ -124,25 +120,17 @@ sudo cp scripts/10-raphnet.rules /etc/udev/rules.d/
 sudo udevadm control --reload-rules
 ```
 
-### Windows (MSYS2 / MinGW-w64)
-
-From an MSYS2 MINGW64 shell:
-
-```sh
-pacman -S mingw-w64-x86_64-gcc mingw-w64-x86_64-cmake mingw-w64-x86_64-ninja
-cmake -S . -B build -G Ninja && cmake --build build
-```
-
-The resulting `build/mempak.exe` is statically linked.
-
 ## Layout
 
-- `src/` contains the command-line code: `main.c`, `cli.c`, `cmd_adapter.c` and `cmd_offline.c`.
-- `src/lib/` contains the core library from gcn64tools `rntlib`, which handles mempak images and filesystems and talks to the adapter.
-- `third_party/hidapi/` contains the vendored hidapi 0.14.0 backends for macOS, Windows and Linux (hidraw).
-- `tests/offline.sh` runs the offline round-trip test through CTest.
+- `cmd/mempak/` is the command-line tool (built with [cobra](https://github.com/spf13/cobra)).
+- `internal/mempak/` handles pak images (mpk, mpk4, n64), the pak filesystem and note files.
+- `internal/raphnet/` talks to raphnet adapters and reads and writes paks through them.
+- `internal/hid/` is a minimal cgo-free HID library: hidraw on Linux, IOKit (through
+  [purego](https://github.com/ebitengine/purego)) on macOS, and hid.dll on Windows.
+- `tests/offline.sh` runs the offline round-trip test against a built binary.
 
 ## License
 
-GPL-3.0-or-later (see `LICENSE`). The code is derived from gcn64tools, Copyright (C) 2007-2017 Raphael Assenat.
-hidapi is used under its BSD license (`third_party/hidapi/LICENSE-bsd.txt`).
+GPL-3.0-or-later (see `LICENSE`). The code is a Go port of raphnet's gcn64tools,
+Copyright (C) 2007-2024 Raphael Assenat. The pak filesystem and CRC code are adapted from
+libdragon (public domain).
