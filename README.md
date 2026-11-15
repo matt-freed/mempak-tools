@@ -71,6 +71,30 @@ mempak insert backup.mpk vigilante8.note
 mempak adapter write --verify backup.mpk
 ```
 
+## Downloads
+
+Prebuilt binaries are on the [Releases page](https://github.com/matt-freed/mempak-tools/releases).
+A new versioned release is published automatically after every successful build of `main`.
+
+| File | Platform |
+|---|---|
+| `mempak-macos-universal.tar.gz` | macOS (Apple Silicon and Intel) |
+| `mempak-linux-x86_64.tar.gz` | Linux x86-64 (also includes the udev rule) |
+| `mempak-windows-x86_64.zip` | Windows x64 |
+
+On macOS the binary isn't signed by a registered Apple developer, so if you download
+it in a browser, macOS blocks it the first time you run it. To allow it, run:
+
+```sh
+xattr -d com.apple.quarantine mempak
+```
+
+You can also allow it under System Settings → Privacy & Security. This isn't needed if you build from source.
+
+Release versions are numbered `<major>.<minor>.<build>`. The major and minor numbers come from
+`project(mempak VERSION ...)` in `CMakeLists.txt`, and the build number is the CI run number.
+To start a new series (for example 0.2.x), change the version there.
+
 ## Building
 
 The only requirements are CMake (3.16 or newer) and a C compiler.

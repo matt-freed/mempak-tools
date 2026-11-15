@@ -6,6 +6,11 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
 	set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
 endif()
 
+# Version reported by 'mempak --version'. CI sets MEMPAK_VERSION to
+# <major>.<minor>.<CI run number>, taking major.minor from project() above.
+# Bump the minor (or major) here to start a new release series.
+set(MEMPAK_VERSION "${PROJECT_VERSION}" CACHE STRING "Version string reported by the CLI")
+
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_EXTENSIONS ON) # gnu99: the original sources rely on GNU/POSIX extensions
 
@@ -73,7 +78,7 @@ add_executable(mempak
 	src/cmd_offline.c
 )
 target_link_libraries(mempak PRIVATE mempakcore)
-target_compile_definitions(mempak PRIVATE VERSION_STR="${PROJECT_VERSION}")
+target_compile_definitions(mempak PRIVATE VERSION_STR="${MEMPAK_VERSION}")
 
 if(MINGW)
 	# Produce a self-contained .exe (no libgcc / winpthread DLLs needed).

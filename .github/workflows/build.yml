@@ -1,5 +1,11 @@
 name: Build
 
+# - Pull requests: build + test only.
+# - Push to main: build + test, then publish a new versioned release.
+#
+# Release versions are <major>.<minor>.<run number>: major.minor come from
+# project(... VERSION x.y.z) in CMakeLists.txt, and the patch is this
+# workflow's run number, so every release is numbered higher than the last.
 on:
   push:
     branches: [ main ]
@@ -7,11 +13,36 @@ on:
     branches: [ main ]
 
 jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        run: |
+          base=$(grep -oE 'project\(mempak VERSION [0-9]+\.[0-9]+' CMakeLists.txt | grep -oE '[0-9]+\.[0-9]+$')
+          if [ -z "$base" ]; then echo "Could not read version from CMakeLists.txt" >&2; exit 1; fi
+          version="$base.${{ github.run_number }}"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            version="$version-pr${{ github.event.number }}"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Version: $version"
+
   unix:
+    needs: version
     strategy:
       fail-fast: false
       matrix:
-        os: [ macos-latest, ubuntu-latest ]
+        include:
+          - os: macos-latest
+            package: mempak-macos-universal
+            # Quoted so the ';' survives the shell.
+            cmake_extra: '"-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64"'
+          - os: ubuntu-latest
+            package: mempak-linux-x86_64
+            cmake_extra: ""
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -19,18 +50,29 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libudev-dev pkg-config
       - name: Configure
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release ${{ matrix.cmake_extra }} -DMEMPAK_VERSION=${{ needs.version.outputs.version }}
       - name: Build
         run: cmake --build build
       - name: Test
         run: ctest --test-dir build --output-on-failure
+      - name: Package
+        run: |
+          build/mempak --version
+          mkdir -p "pkg/${{ matrix.package }}"
+          cp build/mempak README.md LICENSE "pkg/${{ matrix.package }}/"
+          if [ "$RUNNER_OS" = "Linux" ]; then cp scripts/10-raphnet.rules "pkg/${{ matrix.package }}/"; fi
+          # tar keeps the executable bit, which upload-artifact would drop.
+          tar -C pkg -czf "${{ matrix.package }}.tar.gz" "${{ matrix.package }}"
       - uses: actions/upload-artifact@v4
         with:
-          name: mempak-${{ runner.os }}
-          path: build/mempak
+          name: ${{ matrix.package }}
+          path: ${{ matrix.package }}.tar.gz
 
   windows:
+    needs: version
     runs-on: windows-latest
+    env:
+      PACKAGE: mempak-windows-x86_64
     defaults:
       run:
         shell: msys2 {0}
@@ -44,13 +86,53 @@ jobs:
             mingw-w64-x86_64-cmake
             mingw-w64-x86_64-ninja
             diffutils
+            zip
       - name: Configure
-        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DMEMPAK_VERSION=${{ needs.version.outputs.version }}
       - name: Build
         run: cmake --build build
       - name: Test
         run: ctest --test-dir build --output-on-failure
+      - name: Package
+        run: |
+          build/mempak.exe --version
+          mkdir -p "pkg/$PACKAGE"
+          cp build/mempak.exe README.md LICENSE "pkg/$PACKAGE/"
+          (cd pkg && zip -r "../$PACKAGE.zip" "$PACKAGE")
       - uses: actions/upload-artifact@v4
         with:
-          name: mempak-Windows
-          path: build/mempak.exe
+          name: ${{ env.PACKAGE }}
+          path: ${{ env.PACKAGE }}.zip
+
+  release:
+    # Only after every build and test passed, and never for pull requests.
+    needs: [ version, unix, windows ]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: release
+      cancel-in-progress: false
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TAG: v${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - run: ls -l dist
+      - name: Create release
+        run: |
+          # Re-running a workflow keeps its run number; don't fail if this
+          # version was already published by an earlier attempt.
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists, nothing to do."
+            exit 0
+          fi
+          gh release create "$TAG" dist/* \
+            --target "$GITHUB_SHA" \
+            --title "mempak ${TAG#v}" \
+            --generate-notes
