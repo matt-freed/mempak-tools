@@ -1,17 +1,9 @@
 #!/bin/sh
 # Install (or update) the mempak CLI from the latest GitHub release.
 #
-# The repo is private, so downloads go through the GitHub CLI (gh), which uses
-# your GitHub login. From a clone:
+#   curl -fsSL https://raw.githubusercontent.com/matt-freed/mempak-tools/main/install.sh | sh
 #
-#   ./install.sh
-#
-# or without a clone:
-#
-#   gh api repos/matt-freed/mempak-tools/contents/install.sh -H 'Accept: application/vnd.github.raw' | sh
-#
-# If gh is not installed or not logged in, plain curl is used, which only works
-# if the repo is public.
+# or from a clone: ./install.sh
 #
 # Environment variables:
 #   PREFIX          Install to $PREFIX/bin (default: $HOME/.local)
@@ -39,13 +31,6 @@ trap 'rm -rf "$TMP"' EXIT
 if [ -n "${MEMPAK_URL:-}" ]; then
 	echo "Downloading $MEMPAK_URL"
 	curl -fSL --progress-bar "$MEMPAK_URL" -o "$TMP/mempak.tar.gz" || err "download failed"
-elif command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
-	# Authenticated download: works for private repos. With no tag argument,
-	# gh downloads from the latest release.
-	echo "Downloading $PACKAGE.tar.gz from ${MEMPAK_VERSION:-the latest release} (via gh)"
-	# shellcheck disable=SC2086 # MEMPAK_VERSION is intentionally unquoted: empty means latest
-	gh release download ${MEMPAK_VERSION:-} --repo "$REPO" --pattern "$PACKAGE.tar.gz" \
-		--output "$TMP/mempak.tar.gz" || err "download failed (does the release exist? see 'gh release list --repo $REPO')"
 else
 	if [ -n "${MEMPAK_VERSION:-}" ]; then
 		URL="https://github.com/$REPO/releases/download/$MEMPAK_VERSION/$PACKAGE.tar.gz"
@@ -54,7 +39,7 @@ else
 	fi
 	echo "Downloading $URL"
 	curl -fSL --progress-bar "$URL" -o "$TMP/mempak.tar.gz" || \
-		err "download failed. The repo is private: install the GitHub CLI and run 'gh auth login', then retry."
+		err "download failed (does the release exist? see https://github.com/$REPO/releases)"
 fi
 tar -xzf "$TMP/mempak.tar.gz" -C "$TMP"
 [ -f "$TMP/$PACKAGE/mempak" ] || err "archive does not contain $PACKAGE/mempak"

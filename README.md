@@ -83,6 +83,15 @@ mempak adapter write --verify backup.mpk
 Prebuilt binaries are on the [Releases page](https://github.com/matt-freed/mempak-tools/releases).
 A new versioned release is published automatically after every successful build of `main`.
 
+On macOS or Linux x86-64, you can install or update to the latest release with:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/matt-freed/mempak-tools/main/install.sh | sh
+```
+
+This installs to `~/.local/bin` (set `PREFIX` to change it) and skips the macOS quarantine
+step below.
+
 | File | Platform |
 |---|---|
 | `mempak-macos-universal.tar.gz` | macOS (Apple Silicon and Intel) |
