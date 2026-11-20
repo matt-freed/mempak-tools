@@ -8,10 +8,11 @@ This is a focused extraction of the mempak features from raphnet's
 [gcn64tools](https://www.raphnet.net/programmation/gcn64tools/index_en.php), ported to Go.
 The GUI and support for other controllers and accessories have been removed.
 
-Why: Mostly it was a fun project for me. If you only need the mempak functionality of the adapter,
-this Go port provides easier cross-compilation and a single static binary, with no hidapi,
-libudev or other libraries to install. A simpler focused CLI can be easier to use, and several
-bug fixes and enhancements are provided. 
+Why:
+ - If you only need the mempak functionality of the adapter, this Go port provides easier cross-compilation and a single static binary, with no additional libraries to install. 
+ - A simpler focused CLI with some enhancements/additional features
+ - Several bug fixes for a closer adherence to the n64 manual spec
+ - Mostly, a fun project for me to learn about n64 mempaks
 
 Many thanks to raphnet for designing the adapter hardware and its firmware, and for releasing gcn64tools as open source. 
 
@@ -64,6 +65,9 @@ instead, and a game will then need to format the pak before using it.
 
 Use `-f FMT` with `read`, `format` and `convert` to choose a different format.
 Commands that edit a file in place (`rm`, `insert`) keep the file's existing format.
+
+For the byte-level layout of paks, image files and note files, see the
+[Controller Pak format spec](docs/mempak-format.md).
 
 ### Note options
 
@@ -157,9 +161,17 @@ sudo udevadm control --reload-rules
 - `internal/hid/` is a minimal cgo-free HID library: hidraw on Linux, IOKit (through
   [purego](https://github.com/ebitengine/purego)) on macOS, and hid.dll on Windows.
 - `tests/offline.sh` runs the offline round-trip test against a built binary.
+- `docs/mempak-format.md` describes the Controller Pak filesystem and the file formats.
 
 ## License
 
 GPL-3.0-or-later (see `LICENSE`). The code is a Go port of raphnet's gcn64tools,
 Copyright (C) 2007-2024 Raphael Assenat. The pak filesystem and CRC code are adapted from
 libdragon (public domain).
+
+[libdragon](https://github.com/DragonMinded/libdragon) is an open-source SDK for N64
+homebrew, written by the community as an alternative to Nintendo's official SDK
+(libultra). This tool's Controller Pak filesystem code is based on libdragon's
+`mempak.c`. So some rules in this tool, such as which
+region codes make a note valid, are libdragon conventions rather than part of
+Nintendo's format. The [format spec](docs/mempak-format.md) marks where that applies.
