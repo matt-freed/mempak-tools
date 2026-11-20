@@ -216,7 +216,8 @@ func TestFormats(t *testing.T) {
 
 func TestCharset(t *testing.T) {
 	cases := map[byte]rune{0x00: ' ', 0x0F: ' ', 0x10: '0', 0x1A: 'A', 0x34: '!', 0x41: '@',
-		0x42: '。', 0x47: 'ゥ', 0x94: 'ポ', 0x95: ' ', 0xFF: ' '}
+		0x42: '。', 0x47: 'ゥ', 0x94: 'ポ', 0x95: ' ', 0xFF: ' ',
+		0x37: '\'', 0x43: '゛', 0x44: '゜'}
 	for c, want := range cases {
 		if got := decodeChar(c); got != want {
 			t.Errorf("decodeChar(0x%02x) = %q, want %q", c, got, want)

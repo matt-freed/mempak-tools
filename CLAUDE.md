@@ -29,9 +29,12 @@ for t in linux/amd64 windows/amd64 darwin/arm64 freebsd/amd64; do
 - **Exit codes:** 0 ok, 1 runtime error, 2 usage error. Return `usagef(...)`/`usageError`
   for bad command lines and wrap cobra arg checks with `args(...)`; `errSilent` exits 1
   without printing.
-- **Keep on-disk behaviour identical to the C tool.** Images, note files and `ls`
-  output were checked byte-for-byte against the C binary; `tests/offline.sh` greps
-  exact strings. Notable inherited behaviour:
+- **The C tool is a reference, not a constraint.** Images, note files and `ls`
+  output were originally checked byte-for-byte against the C binary, but behaviour
+  may now deviate from it to fix bugs or improve the tool. When it does, update
+  `tests/offline.sh` (it greps exact strings) and `docs/mempak-format.md`.
+  Deviations so far: the note-name charset follows the N64 Programming Manual, not
+  the C table (codes 0x37, 0x43, 0x44). Current behaviour, inherited from C:
   - `.mpk` output defaults to the 32kB MPK format (not MPK4); only `*.n64` picks N64.
   - Images of unrecognised size load as raw with `FormatInvalid`, so in-place edits
     (`rm`, `insert`) fail to save rather than guess a format.

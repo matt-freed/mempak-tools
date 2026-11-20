@@ -5,8 +5,8 @@ package mempak
 
 // n64Charset maps the N64 note-name character set, starting at code 0x0F,
 // to Unicode.
-var n64Charset = []rune(" 0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ!\"#`*+,-./:=?@" +
-	"。Åℬァィゥェォッャュョヲンアイウエオ" +
+var n64Charset = []rune(" 0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ!\"#'*+,-./:=?@" +
+	"。゛゜ァィゥェォッャュョヲンアイウエオ" +
 	"カキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワ" +
 	"ガギグゲゴザジズゼゾダヂヅデドバビブベボパピプペポ")
 
