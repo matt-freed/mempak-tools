@@ -118,6 +118,8 @@ same_file rep.mpk rep-damaged.mpk || fail "repair: declining should change nothi
 "$MEMPAK" repair -y rep.mpk > repair.txt || fail "repair -y failed"
 grep -q "Note 0 'TEST' is damaged" repair.txt || fail "repair: damaged note not reported"
 grep -q "A backup of the original file will be created first: 'rep.mpk.bak'" repair.txt || fail "repair: backup file not announced"
+grep -q "damaged notes are removed, not recovered" repair.txt || fail "repair: limitations not shown"
+"$MEMPAK" repair --help | grep -q "Limitations:" || fail "repair --help: limitations not shown"
 same_file rep.mpk.bak rep-damaged.mpk || fail "repair: backup should hold the original file"
 "$MEMPAK" ls rep.mpk > ls.txt
 grep -q "Blocks used: 2 / 123" ls.txt || fail "repair: the damaged note's blocks should be freed"

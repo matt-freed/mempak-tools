@@ -24,7 +24,17 @@ func newRepairCmd() *cobra.Command {
 			"  - damaged notes (broken block chain) are removed\n" +
 			"  - blocks marked used but not part of any readable note are freed\n\n" +
 			"The repairs are listed and you are asked before anything changes. The\n" +
-			"original file is first copied to PAKFILE.bak, which must not exist yet.",
+			"original file is first copied to PAKFILE.bak, which must not exist yet.\n\n" +
+			"Limitations:\n" +
+			"  - Damaged notes are removed, not recovered. Their data, and that of freed\n" +
+			"    blocks, is kept only in PAKFILE.bak.\n" +
+			"  - Only the filesystem is checked. Save data inside a note has no checksum\n" +
+			"    on the pak, so corrupt data in a readable note goes unnoticed (the game's\n" +
+			"    own checks may still reject it).\n" +
+			"  - Nothing is repaired if no ID block copy is intact, if neither TOC copy\n" +
+			"    passes its checksum, or on a multi-bank pak.\n" +
+			"  - Two notes sharing a block (cross-linked chains) are not detected.\n" +
+			"  - Deleted notes cannot be recovered.",
 		Args: args(cobra.ExactArgs(1)),
 		RunE: func(cmd *cobra.Command, a []string) error {
 			path := a[0]
@@ -43,7 +53,7 @@ func newRepairCmd() *cobra.Command {
 				return fmt.Errorf("cannot repair '%s': %w", path, err)
 			}
 			if !report.Changed() {
-				fmt.Fprintf(stdout, "'%s' needs no repair\n", path)
+				fmt.Fprintf(stdout, "'%s' needs no repair (only the filesystem was checked, not the save data inside notes)\n", path)
 				return nil
 			}
 
@@ -59,6 +69,8 @@ func newRepairCmd() *cobra.Command {
 			if _, err := os.Lstat(backup); err == nil {
 				return fmt.Errorf("backup file '%s' already exists; move it away first", backup)
 			}
+			fmt.Fprintln(stdout, "Warning: damaged notes are removed, not recovered, and only the filesystem is checked,\n"+
+				"not the save data inside notes. See 'mempak repair --help' for all limitations.")
 			fmt.Fprintf(stdout, "A backup of the original file will be created first: '%s'\n", backup)
 			if !yes && !confirm(cmd.Context(), "Apply these repairs?") {
 				return errors.New("cancelled")

@@ -95,6 +95,18 @@ It lists the repairs and asks before changing anything (`-y` skips the
 question). The original file is first saved as `PAKFILE.bak`; if that file
 already exists, `repair` stops, so an earlier backup is never overwritten.
 
+Limitations:
+
+- **Damaged notes are removed, not recovered.** Their data, and that of freed
+  blocks, is kept only in `PAKFILE.bak`.
+- **Only the filesystem is checked.** Save data inside a note has no checksum on
+  the pak, so corrupt data in a readable note goes unnoticed (the game's own
+  checks may still reject it).
+- **Some damage can't be repaired:** no intact ID block copy, neither TOC copy
+  passing its checksum, or a multi-bank pak. `repair` then changes nothing.
+- **Cross-linked chains** (two notes sharing a block) are not detected.
+- **Deleted notes** cannot be recovered.
+
 To repair a pak, read it, repair the image, and write it back:
 
 ```sh
