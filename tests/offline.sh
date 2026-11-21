@@ -45,9 +45,12 @@ make_note test.note
 # format
 "$MEMPAK" format blank.mpk >/dev/null
 [ "$(wc -c < blank.mpk | tr -d ' ')" = 32768 ] || fail "format: mpk should be 32768 bytes"
+# .mpk is the only format: other extensions don't change what is written
 "$MEMPAK" format blank.n64 >/dev/null
-"$MEMPAK" format -f mpk4 blank4.mpk >/dev/null
-[ "$(wc -c < blank4.mpk | tr -d ' ')" = 131072 ] || fail "format: mpk4 should be 131072 bytes"
+[ "$(wc -c < blank.n64 | tr -d ' ')" = 32768 ] || fail "format: every output should be a 32768-byte mpk"
+# -f (mpk4/n64) was removed: it should be a usage error
+rc=0; "$MEMPAK" format -f n64 x.n64 >/dev/null 2>&1 || rc=$?
+[ "$rc" = 2 ] || fail "format -f should be a usage error (exit 2), got $rc"
 pass "format"
 
 # ls on blank
@@ -90,19 +93,19 @@ grep -q "Blocks used: 2 / 123" ls.txt || fail "rm: expected 2 used blocks"
 if "$MEMPAK" rm pak.mpk 0 >/dev/null 2>&1; then fail "rm of a free note should fail"; fi
 pass "rm"
 
-# convert round trip mpk -> n64 (with comment) -> mpk
-"$MEMPAK" convert pak.mpk pak.n64 > /dev/null
-"$MEMPAK" insert -s 1 -c "hello world" pak.n64 test.note > /dev/null
-"$MEMPAK" ls pak.n64 | grep -q "{ hello world }" || fail "n64 comment not stored"
-"$MEMPAK" convert pak.n64 back.mpk > /dev/null
-[ "$(wc -c < back.mpk | tr -d ' ')" = 32768 ] || fail "convert: mpk should be 32768 bytes"
-"$MEMPAK" extract back.mpk 1 rt.note > /dev/null
-same_file test.note rt.note || fail "convert: note changed across mpk->n64->mpk"
-pass "convert"
+# a file that isn't 32 KiB can be listed (with a warning) but not modified
+{ cat pak.mpk; printf '\x00%.0s' {1..16}; } > big.mpk
+"$MEMPAK" ls big.mpk > ls.txt 2> err.txt || fail "ls: wrong-size file should still list"
+grep -q "not 32 KiB" err.txt || fail "ls: wrong-size file should warn"
+cp big.mpk big-before.mpk
+if "$MEMPAK" rm big.mpk 0 >/dev/null 2>&1; then fail "rm: wrong-size file should not be modified"; fi
+same_file big.mpk big-before.mpk || fail "rm: wrong-size file changed"
+if "$MEMPAK" convert pak.mpk x.mpk >/dev/null 2>&1; then fail "convert was removed and should fail"; fi
+pass "wrong-size image"
 
 # argument validation
 if "$MEMPAK" rm pak.mpk abc >/dev/null 2>&1; then fail "non-numeric note id should be rejected"; fi
-if "$MEMPAK" format -f bogus x.mpk >/dev/null 2>&1; then fail "unknown format should be rejected"; fi
+if "$MEMPAK" format -f bogus x.mpk >/dev/null 2>&1; then fail "unknown flag should be rejected"; fi
 if "$MEMPAK" nosuchcmd >/dev/null 2>&1; then fail "unknown command should fail"; fi
 "$MEMPAK" --help >/dev/null
 "$MEMPAK" adapter --help >/dev/null

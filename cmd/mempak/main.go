@@ -65,7 +65,7 @@ func newRootCmd() *cobra.Command {
 		Short: "N64 controller pak (mempak) tools for raphnet USB adapters",
 		Long: "mempak " + version + " - N64 controller pak (mempak) tools for raphnet USB adapters\n\n" +
 			"Adapter commands talk to the connected raphnet adapter. All other\n" +
-			"commands work offline on image files (.mpk / .n64).",
+			"commands work offline on 32 KiB .mpk image files.",
 		Version:           version,
 		SilenceErrors:     true,
 		SilenceUsage:      true,
@@ -83,7 +83,6 @@ func newRootCmd() *cobra.Command {
 		newExtractCmd(),
 		newInsertCmd(),
 		newFormatCmd(),
-		newConvertCmd(),
 		&cobra.Command{
 			Use:   "version",
 			Short: "Show the version",

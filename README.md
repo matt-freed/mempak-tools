@@ -23,16 +23,15 @@ commands work offline on image files.
 
 ```
 mempak adapter detect [-v]                                Show adapters, ports, controllers and mempak presence
-mempak adapter read [OPTIONS] [-f FMT] [OUTFILE]          Read the mempak to an image file (hex dump if no file)
+mempak adapter read [OPTIONS] [OUTFILE]                   Read the mempak to an image file (hex dump if no file)
 mempak adapter write [OPTIONS] [-y] [--verify] INFILE     Write an image file to the mempak
 mempak adapter erase [OPTIONS] [-y] [--fill-ff]           Erase the mempak
 
 mempak ls [-v] PAKFILE                                    List notes
 mempak rm PAKFILE NOTE                                    Delete a note
 mempak extract PAKFILE NOTE OUTFILE                       Export a note to a note file
-mempak insert [-s N [-o]] [-c TEXT] PAKFILE NOTEFILE      Import a note file
-mempak format [-f FMT] OUTFILE                            Create an empty image
-mempak convert [-f FMT] INFILE OUTFILE                    Convert between image formats
+mempak insert [-s N [-o]] PAKFILE NOTEFILE                Import a note file
+mempak format OUTFILE                                     Create an empty image
 ```
 
 Run `mempak COMMAND --help` or `mempak adapter COMMAND --help` for each command's options.
@@ -46,7 +45,6 @@ Run `mempak COMMAND --help` or `mempak adapter COMMAND --help` for each command'
 | `-s, --serial SERIAL` | Choose an adapter by serial number. By default the first adapter found is used. |
 | `-c, --channel N` | Controller port, starting at 0. The default is 0. |
 | `-v, --verbose` | Show detailed USB output (also accepted by `detect`, which then shows device paths too). |
-| `-f, --format FMT` | Image format for `read` (see [Image formats](#image-formats)). |
 | `-y, --yes` | Skip the confirmation prompt (`write`, `erase`). |
 | `--verify` | Read the pak back after `write` and compare it with the file. |
 | `--fill-ff` | Make `erase` fill the pak with 0xFF instead of writing a blank filesystem. |
@@ -55,16 +53,13 @@ By default, `erase` writes a blank formatted filesystem and checks it by reading
 it back, so games can use the pak straight away. `--fill-ff` wipes every byte
 instead, and a game will then need to format the pak before using it.
 
-### Image formats
+### Image files
 
-| Format | Description |
-|---|---|
-| `mpk` | Standard 32kB raw image. This is the default output format. |
-| `mpk4` | 128kB raw image holding 4 copies of the 32kB image. |
-| `n64` | DexDrive image, which can store a comment for each note. It is used automatically when the output file ends in `.n64`. |
-
-Use `-f FMT` with `read`, `format` and `convert` to choose a different format.
-Commands that edit a file in place (`rm`, `insert`) keep the file's existing format.
+The only image format is `.mpk`: the raw 32 KiB contents of a pak, byte for byte.
+Other formats, such as DexDrive `.n64` files and 128 KiB "MPK4" files, are not
+supported, because their real layouts can't be checked without the original
+hardware or files. A file that isn't exactly 32 KiB can still be listed with `ls`
+(with a warning), but nothing will modify it or write it to a pak.
 
 For the byte-level layout of paks, image files and note files, see the
 [Controller Pak format spec](docs/mempak-format.md).
@@ -78,7 +73,6 @@ Note slots are numbered 0–15, as shown by `mempak ls`.
 | `ls -v, --verbose` | Also show each note's game code (its last character is the region) and publisher code. |
 | `insert -s, --slot N` | Write the note to slot N. If the slot already holds a note, you are asked before it is replaced. |
 | `insert -o, --overwrite` | With `-s`, replace an existing note without asking. |
-| `insert -c, --comment TEXT` | Store a comment with the note (up to 255 characters; `.n64` images only, ignored with a warning otherwise). |
 
 Without `-s`, `insert` puts the note in the first free slot. In scripts, where there is
 nobody to answer the question, use `--overwrite` to replace a note: an unanswered prompt
@@ -156,7 +150,7 @@ sudo udevadm control --reload-rules
 ## Layout
 
 - `cmd/mempak/` is the command-line tool (built with [cobra](https://github.com/spf13/cobra)).
-- `internal/mempak/` handles pak images (mpk, mpk4, n64), the pak filesystem and note files.
+- `internal/mempak/` handles 32 KiB pak images, the pak filesystem and note files.
 - `internal/raphnet/` talks to raphnet adapters and reads and writes paks through them.
 - `internal/hid/` is a minimal cgo-free HID library: hidraw on Linux, IOKit (through
   [purego](https://github.com/ebitengine/purego)) on macOS, and hid.dll on Windows.

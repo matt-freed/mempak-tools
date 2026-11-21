@@ -189,7 +189,7 @@ func (a *Adapter) ReadPak(ctx context.Context, channel int, progress Progress) (
 	if err := a.DetectPak(channel); err != nil {
 		return nil, err
 	}
-	img := &mempak.Image{Format: mempak.FormatMPK}
+	img := &mempak.Image{}
 	for addr := 0; addr < mempak.Size; addr += pakBlock {
 		if err := ctx.Err(); err != nil {
 			return nil, err

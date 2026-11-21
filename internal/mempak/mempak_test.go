@@ -5,6 +5,8 @@ package mempak
 import (
 	"bytes"
 	"errors"
+	"os"
+	"path/filepath"
 	"slices"
 	"testing"
 )
@@ -39,6 +41,11 @@ func TestNewIsValid(t *testing.T) {
 	if err := img.Validate(); err != nil {
 		t.Fatal(err)
 	}
+	for _, off := range idBlockOffsets {
+		if !idBlockValid(img.sector(0)[off : off+idBlockSize]) {
+			t.Fatalf("format template ID block at 0x%02X fails its checksums", off)
+		}
+	}
 	if free, _ := img.FreeBlocks(); free != TotalBlocks {
 		t.Fatalf("free = %d", free)
 	}
@@ -52,6 +59,55 @@ func TestNewIsValid(t *testing.T) {
 	}
 }
 
+// setIDChecksums recomputes the two checksums of an ID block.
+func setIDChecksums(b []byte) {
+	var sum uint16
+	for i := 0; i < 0x1C; i += 2 {
+		sum += uint16(b[i])<<8 | uint16(b[i+1])
+	}
+	c2 := 0xFFF2 - sum
+	b[0x1C], b[0x1D], b[0x1E], b[0x1F] = byte(sum>>8), byte(sum), byte(c2>>8), byte(c2)
+}
+
+// setBanks sets the bank count in all four ID block copies.
+func setBanks(img *Image, n byte) {
+	for _, off := range idBlockOffsets {
+		b := img.sector(0)[off : off+idBlockSize]
+		b[idBankCount] = n
+		setIDChecksums(b)
+	}
+}
+
+func TestMultiBank(t *testing.T) {
+	img := New()
+	if n, err := img.Banks(); err != nil || n != 1 {
+		t.Fatalf("standard pak: banks = %d, %v", n, err)
+	}
+
+	setBanks(img, 4)
+	if n, _ := img.Banks(); n != 4 {
+		t.Errorf("banks = %d, want 4", n)
+	}
+	if err := img.Validate(); !errors.Is(err, ErrMultiBank) {
+		t.Errorf("Validate: %v", err)
+	}
+	if _, err := img.Note(0); !errors.Is(err, ErrMultiBank) {
+		t.Errorf("Note: %v", err)
+	}
+
+	// A 128 KiB dump of a 4-bank pak loads as raw data (WrongSize); its
+	// first 32 KiB must not be read as a whole pak.
+	b := append(bytes.Clone(img.Data[:]), make([]byte, 3*Size)...)
+	if err := Decode(b).Validate(); !errors.Is(err, ErrMultiBank) {
+		t.Errorf("128 KiB 4-bank dump: %v", err)
+	}
+
+	setBanks(img, 0) // read as 1
+	if err := img.Validate(); err != nil {
+		t.Errorf("bank count 0: %v", err)
+	}
+}
+
 func TestIDBlockFallback(t *testing.T) {
 	img := New()
 	if d, err := img.DamagedIDBlocks(); err != nil || len(d) != 0 {
@@ -62,14 +118,7 @@ func TestIDBlockFallback(t *testing.T) {
 	h[0x20+0x1C] ^= 0xFF // primary: bad checksum 1
 	// Backup 2: valid checksums, but a different serial than the others.
 	h[0x80] = 0x12
-	sum := uint16(h[0x80+0x1C])<<8 | uint16(h[0x80+0x1D])
-	sum = sum + 0x1200 - 0xFF00 // the word at 0x80 went from 0xFFFF to 0x12FF
-	h[0x80+0x1C], h[0x80+0x1D] = byte(sum>>8), byte(sum)
-	c2 := 0xFFF2 - sum
-	h[0x80+0x1E], h[0x80+0x1F] = byte(c2>>8), byte(c2)
-	if !idBlockValid(h[0x80 : 0x80+idBlockSize]) {
-		t.Fatal("test setup: backup 2 should have valid checksums")
-	}
+	setIDChecksums(h[0x80 : 0x80+idBlockSize])
 
 	if err := img.Validate(); err != nil {
 		t.Fatalf("pak with intact backups rejected: %v", err)
@@ -312,35 +361,39 @@ func TestInsertSkipsUsedSlots(t *testing.T) {
 	}
 }
 
-func TestFormats(t *testing.T) {
+func TestImageFile(t *testing.T) {
 	img := New()
 	insert(t, img, testNote(2, 1), -1)
-	img.Comments[0] = "hello world"
+	path := filepath.Join(t.TempDir(), "pak.mpk")
+	if err := img.SaveFile(path); err != nil {
+		t.Fatal(err)
+	}
+	got, err := LoadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.WrongSize() || got.Data != img.Data {
+		t.Fatal("round trip through a .mpk file failed")
+	}
+	if b, _ := os.ReadFile(path); len(b) != Size {
+		t.Fatalf("saved %d bytes, want %d", len(b), Size)
+	}
 
-	for _, f := range []Format{FormatMPK, FormatMPK4, FormatN64} {
-		b, err := img.Encode(f)
-		if err != nil {
-			t.Fatal(err)
-		}
+	// Any other size (DexDrive .n64, old 128 KiB MPK4, truncated files...) is
+	// read as raw data for inspection, and can't be saved back.
+	for _, n := range []int{0, 1000, 0x9040, 4 * Size} {
+		b := make([]byte, n)
+		copy(b, img.Data[:])
 		got := Decode(b)
-		if got.Format != f || got.Data != img.Data {
-			t.Errorf("%v: round trip failed (format %v)", f, got.Format)
+		if !got.WrongSize() {
+			t.Errorf("%d-byte file not flagged as the wrong size", n)
 		}
-		if f == FormatN64 && got.Comments != img.Comments {
-			t.Errorf("comments = %q", got.Comments)
+		if err := got.SaveFile(path); !errors.Is(err, ErrWrongSize) {
+			t.Errorf("saving a %d-byte file's image: %v", n, err)
 		}
 	}
-	if Decode(make([]byte, 1000)).Format != FormatInvalid {
-		t.Error("odd-sized file should have an invalid format")
-	}
-	if _, err := img.Encode(FormatInvalid); err == nil {
-		t.Error("encoding an invalid format succeeded")
-	}
-	if FormatForFilename("x.N64") != FormatN64 || FormatForFilename("x.mpk") != FormatMPK {
-		t.Error("FormatForFilename")
-	}
-	if f, err := ParseFormat("MPK4"); err != nil || f != FormatMPK4 {
-		t.Error("ParseFormat")
+	if New().WrongSize() {
+		t.Error("New() flagged as the wrong size")
 	}
 }
 

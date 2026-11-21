@@ -239,22 +239,16 @@ func detectAdapter(inf raphnet.Info) {
 
 func newReadCmd() *cobra.Command {
 	var o adapterOpts
-	var format string
 	cmd := &cobra.Command{
 		Use:   "read [OUTFILE]",
 		Short: "Read the mempak to an image file",
-		Long: "Read the whole mempak and save it to OUTFILE.\n" +
-			"Without OUTFILE, a hex dump is printed to stdout.\n\n" + formatsHelp,
+		Long: "Read the whole mempak and save it to OUTFILE as a 32 KiB .mpk image.\n" +
+			"Without OUTFILE, a hex dump is printed to stdout.",
 		Args: args(cobra.MaximumNArgs(1)),
 		RunE: func(cmd *cobra.Command, a []string) error {
 			var outfile string
-			var f mempak.Format
 			if len(a) == 1 {
 				outfile = a[0]
-				var err error
-				if f, err = outputFormat(format, outfile); err != nil {
-					return err
-				}
 			}
 
 			s, err := openAdapter(&o)
@@ -270,11 +264,13 @@ func newReadCmd() *cobra.Command {
 			if outfile == "" {
 				return mempak.Hexdump(stdout, img.Data[:])
 			}
-			if err := img.SaveFile(outfile, f); err != nil {
+			if err := img.SaveFile(outfile); err != nil {
 				return fmt.Errorf("error writing file '%s': %w", outfile, err)
 			}
-			fmt.Fprintf(os.Stderr, "Wrote '%s' (%s format)\n", outfile, f)
-			if img.Validate() != nil {
+			fmt.Fprintf(os.Stderr, "Wrote '%s'\n", outfile)
+			if err := img.Validate(); errors.Is(err, mempak.ErrMultiBank) {
+				return fmt.Errorf("'%s' is incomplete: only the pak's first 32 KiB bank was read: %w", outfile, err)
+			} else if err != nil {
 				fmt.Fprintln(os.Stderr, "Warning: the pak contents are not a valid mempak filesystem (unformatted or corrupted)")
 			} else {
 				warnDamagedID(img)
@@ -283,7 +279,6 @@ func newReadCmd() *cobra.Command {
 		},
 	}
 	o.register(cmd, false)
-	cmd.Flags().StringVarP(&format, "format", "f", "", "output `FMT` (default: from extension, else mpk)")
 	return cmd
 }
 
@@ -293,14 +288,19 @@ func newWriteCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "write INFILE",
 		Short: "Write an image file to the mempak",
-		Long:  "Write a mempak image (.mpk/.n64) to the mempak, replacing all its contents.",
+		Long:  "Write a 32 KiB .mpk image to the mempak, replacing all its contents.",
 		Args:  args(cobra.ExactArgs(1)),
 		RunE: func(cmd *cobra.Command, a []string) error {
 			img, err := loadImage(a[0])
 			if err != nil {
 				return err
 			}
-			if img.Validate() != nil {
+			if img.WrongSize() {
+				return fmt.Errorf("cannot write '%s': %w", a[0], mempak.ErrWrongSize)
+			}
+			if err := img.Validate(); errors.Is(err, mempak.ErrMultiBank) {
+				return fmt.Errorf("cannot write '%s': %w", a[0], err)
+			} else if err != nil {
 				fmt.Fprintf(os.Stderr, "Warning: '%s' is not a valid mempak filesystem (unformatted or corrupted)\n", a[0])
 			}
 

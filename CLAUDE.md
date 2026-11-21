@@ -33,11 +33,12 @@ for t in linux/amd64 windows/amd64 darwin/arm64 freebsd/amd64; do
   output were originally checked byte-for-byte against the C binary, but behaviour
   may now deviate from it to fix bugs or improve the tool. When it does, update
   `tests/offline.sh` (it greps exact strings) and `docs/mempak-format.md`.
-  Deviations so far: the note-name charset follows the N64 Programming Manual, not
-  the C table (codes 0x37, 0x43, 0x44). Current behaviour, inherited from C:
-  - `.mpk` output defaults to the 32kB MPK format (not MPK4); only `*.n64` picks N64.
-  - Images of unrecognised size load as raw with `FormatInvalid`, so in-place edits
-    (`rm`, `insert`) fail to save rather than guess a format.
+- **The only image format is 32 KiB raw `.mpk`.** DexDrive `.n64` (with note
+  comments), MPK4 and the `convert` command were removed on purpose: without the
+  original hardware or files their real layouts can't be verified. Don't add a
+  format back on a guess. Current behaviour:
+  - Images of unrecognised size load as raw (`Image.WrongSize()`), so `ls` can
+    inspect them, but in-place edits (`rm`, `insert`) and `adapter write` refuse them.
   - Inserted notes keep their raw 32-byte header (only the inode changes). Blocks are
     allocated lowest-first and linked in reverse; the alternate TOC is written before
     the valid one.

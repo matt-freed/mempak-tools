@@ -24,9 +24,9 @@ func loadImage(path string) (*mempak.Image, error) {
 	return img, nil
 }
 
-// saveImage writes img back in its own format.
+// saveImage writes img back to path.
 func saveImage(img *mempak.Image, path string) error {
-	if err := img.SaveFile(path, img.Format); err != nil {
+	if err := img.SaveFile(path); err != nil {
 		return fmt.Errorf("could not write mempak file '%s': %w", path, err)
 	}
 	return nil
@@ -80,22 +80,30 @@ func newLsCmd() *cobra.Command {
 		Use:   "ls PAKFILE",
 		Short: "List notes",
 		Long: "List the notes (saves) stored in a mempak image.\n" +
-			"Raw (.mpk, .bin) and DexDrive (.n64) images are accepted.",
+			"Images are 32 KiB raw .mpk files.",
 		Args: args(cobra.ExactArgs(1)),
 		RunE: func(cmd *cobra.Command, a []string) error {
 			img, err := loadImage(a[0])
 			if err != nil {
 				return err
 			}
-			fmt.Fprintf(stdout, "Image: %s (%s format)\n", a[0], img.Format)
+			fmt.Fprintf(stdout, "Image: %s\n", a[0])
+			if img.WrongSize() {
+				fmt.Fprintf(os.Stderr, "Warning: '%s' is not 32 KiB; showing its first 32 KiB as a raw pak image\n", a[0])
+			}
 
 			free, err := img.FreeBlocks()
+			if errors.Is(err, mempak.ErrMultiBank) {
+				return err
+			}
 			if err != nil {
 				fmt.Fprintln(stdout, "Mempak invalid (not formatted or corrupted)")
 				return errSilent
 			}
 			fmt.Fprintf(stdout, "Blocks used: %d / %d\n\n", mempak.TotalBlocks-free, mempak.TotalBlocks)
-			flushStdout()
+			// No flushStdout() here: a mid-listing flush lets 'ls | grep -q' close
+			// the pipe early and kill us with SIGPIPE. A terminal is unbuffered
+			// anyway, so the warning still appears in place there.
 			warnDamagedID(img)
 
 			for slot := range mempak.NumNotes {
@@ -116,9 +124,6 @@ func newLsCmd() *cobra.Command {
 				fmt.Fprintf(stdout, "%s %s", padRight(n.Name(), 20), size)
 				if verbose {
 					fmt.Fprintf(stdout, "  game %s  publisher %s", code(n.GameCode()), code(n.Publisher()))
-				}
-				if c := img.Comments[slot]; c != "" {
-					fmt.Fprintf(stdout, "  { %s }", c)
 				}
 				fmt.Fprintln(stdout)
 			}
@@ -160,7 +165,6 @@ func newRmCmd() *cobra.Command {
 			if err := img.DeleteNote(slot); err != nil {
 				return fmt.Errorf("error deleting note: %w", err)
 			}
-			img.Comments[slot] = "" // a deleted note no longer owns its comment
 			return saveImage(img, a[0])
 		},
 	}
@@ -195,7 +199,7 @@ func newExtractCmd() *cobra.Command {
 }
 
 func newInsertCmd() *cobra.Command {
-	var slotStr, comment string
+	var slotStr string
 	var overwrite bool
 	cmd := &cobra.Command{
 		Use:   "insert PAKFILE NOTEFILE",
@@ -214,9 +218,6 @@ func newInsertCmd() *cobra.Command {
 				}
 			} else if overwrite {
 				return usagef("--overwrite needs a slot (-s N)")
-			}
-			if len(comment) > mempak.MaxCommentLen {
-				return usagef("comment too long (%d characters max.)", mempak.MaxCommentLen)
 			}
 
 			img, err := loadImage(a[0])
@@ -248,72 +249,27 @@ func newInsertCmd() *cobra.Command {
 				return fmt.Errorf("could not import note '%s': %w", a[1], err)
 			}
 			fmt.Fprintf(stdout, "Note imported into slot %d\n", used)
-
-			// The slot may previously have held another note's comment.
-			img.Comments[used] = ""
-			if flags.Changed("comment") {
-				if img.Format != mempak.FormatN64 {
-					fmt.Fprintf(os.Stderr, "Warning: Ignoring comment since it cannot be stored in %s format. Use the n64 format instead.\n", img.Format)
-				} else {
-					img.Comments[used] = comment
-				}
-			}
 			return saveImage(img, a[0])
 		},
 	}
 	f := cmd.Flags()
 	f.StringVarP(&slotStr, "slot", "s", "", "write to note slot `N` (0-15)")
 	f.BoolVarP(&overwrite, "overwrite", "o", false, "replace the note already in the -s slot without asking")
-	f.StringVarP(&comment, "comment", "c", "", "note comment `TEXT` (only stored in .n64 images)")
 	return cmd
 }
 
 func newFormatCmd() *cobra.Command {
-	var format string
-	cmd := &cobra.Command{
+	return &cobra.Command{
 		Use:   "format OUTFILE",
 		Short: "Create an empty image",
-		Long:  "Create a new, empty (formatted) mempak image file.\n\n" + formatsHelp,
+		Long:  "Create a new, empty (formatted) 32 KiB .mpk image file.",
 		Args:  args(cobra.ExactArgs(1)),
 		RunE: func(cmd *cobra.Command, a []string) error {
-			f, err := outputFormat(format, a[0])
-			if err != nil {
-				return err
-			}
-			if err := mempak.New().SaveFile(a[0], f); err != nil {
+			if err := mempak.New().SaveFile(a[0]); err != nil {
 				return fmt.Errorf("could not write mempak file '%s': %w", a[0], err)
 			}
-			fmt.Fprintf(stdout, "Wrote empty mempak image '%s' (%s format)\n", a[0], f)
+			fmt.Fprintf(stdout, "Wrote empty mempak image '%s'\n", a[0])
 			return nil
 		},
 	}
-	cmd.Flags().StringVarP(&format, "format", "f", "", "output `FMT` (default: from extension, else mpk)")
-	return cmd
-}
-
-func newConvertCmd() *cobra.Command {
-	var format string
-	cmd := &cobra.Command{
-		Use:   "convert INFILE OUTFILE",
-		Short: "Convert between image formats",
-		Long:  "Convert a mempak image between formats.\n\n" + formatsHelp,
-		Args:  args(cobra.ExactArgs(2)),
-		RunE: func(cmd *cobra.Command, a []string) error {
-			f, err := outputFormat(format, a[1])
-			if err != nil {
-				return err
-			}
-			img, err := loadImage(a[0])
-			if err != nil {
-				return err
-			}
-			if err := img.SaveFile(a[1], f); err != nil {
-				return fmt.Errorf("could not write mempak file '%s': %w", a[1], err)
-			}
-			fmt.Fprintf(stdout, "Converted '%s' (%s) to '%s' (%s)\n", a[0], img.Format, a[1], f)
-			return nil
-		},
-	}
-	cmd.Flags().StringVarP(&format, "format", "f", "", "output `FMT` (default: from extension, else mpk)")
-	return cmd
 }

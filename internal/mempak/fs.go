@@ -32,6 +32,10 @@ const (
 var (
 	// ErrNotFormatted means the image has no valid header or TOC.
 	ErrNotFormatted = errors.New("mempak not formatted or corrupted")
+	// ErrMultiBank means the pak's ID block declares more than one 32 KiB
+	// bank. Such a pak has a single filesystem spanning all its banks, with a
+	// larger TOC and the note table after it, which this package can't read.
+	ErrMultiBank = errors.New("multi-bank controller paks are not supported, only standard 32 KiB paks")
 	// ErrCorrupt means a note's block chain is broken.
 	ErrCorrupt = errors.New("mempak filesystem is corrupted")
 	// ErrNoSpace means there are not enough free blocks or note slots.
@@ -66,7 +70,10 @@ var formatHeader = [BlockSize]byte{
 // block: the primary copy, then three backups.
 var idBlockOffsets = [...]int{0x20, 0x60, 0x80, 0xC0}
 
-const idBlockSize = 32
+const (
+	idBlockSize = 32
+	idBankCount = 0x1A // offset of the bank count in an ID block
+)
 
 // idBlockValid checks an ID block's two checksums. Checksum 1 (at 0x1C) is
 // the sum of the fourteen 16-bit words before it; checksum 2 (at 0x1E) is
@@ -91,6 +98,16 @@ func (img *Image) idBlock() (int, error) {
 		}
 	}
 	return 0, ErrNotFormatted
+}
+
+// Banks returns the number of 32 KiB banks declared by the ID block in use.
+// A count of 0 is read as 1.
+func (img *Image) Banks() (int, error) {
+	i, err := img.idBlock()
+	if err != nil {
+		return 0, err
+	}
+	return max(int(img.sector(0)[idBlockOffsets[i]+idBankCount]), 1), nil
 }
 
 // DamagedIDBlocks returns the ID block copies (0 = primary, 1-3 = backups)
@@ -170,8 +187,12 @@ func (img *Image) noteHeader(slot int) []byte {
 
 // validTOC returns the number of the first valid TOC sector (1 or 2).
 func (img *Image) validTOC() (int, error) {
-	if _, err := img.idBlock(); err != nil {
+	banks, err := img.Banks()
+	if err != nil {
 		return 0, err
+	}
+	if banks > 1 {
+		return 0, fmt.Errorf("%w (this pak has %d banks, %d KiB)", ErrMultiBank, banks, banks*Size/1024)
 	}
 	for _, n := range []int{1, 2} {
 		var t toc

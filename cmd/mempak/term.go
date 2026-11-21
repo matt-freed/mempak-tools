@@ -77,21 +77,3 @@ func parseUint(what, s string, max int) (int, error) {
 func parseSlot(s string) (int, error) {
 	return parseUint("note slot", s, mempak.NumNotes-1)
 }
-
-// outputFormat picks the image format for writing outfile: the -f option if
-// given, else N64 for *.n64 and MPK otherwise.
-func outputFormat(opt, outfile string) (mempak.Format, error) {
-	if opt != "" {
-		f, err := mempak.ParseFormat(opt)
-		if err != nil {
-			return f, usageError{err.Error()}
-		}
-		return f, nil
-	}
-	return mempak.FormatForFilename(outfile), nil
-}
-
-const formatsHelp = `Formats:
-  mpk     Standard 32kB raw image (default)
-  mpk4    128kB raw image (4 copies of the 32kB image)
-  n64     DexDrive image (supports note comments; default for *.n64)`

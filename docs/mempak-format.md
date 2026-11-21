@@ -67,7 +67,10 @@ pages, and the note table moves up after them. For a 512 KiB pak (16 banks,
 Each TOC page stores its own checksum in its first entry, so the first page of
 every bank after the first can never hold data.
 
-**This tool** only supports single-bank 32 KiB paks.
+**This tool** only supports single-bank 32 KiB paks. It reads the bank count
+from the ID block in use (a count of `0` is read as `1`). If the count is more
+than 1, every command that reads the filesystem fails with "multi-bank controller
+paks are not supported", instead of misreading the first 32 KiB as a whole pak.
 
 ## 2. Sector 0: ID sector
 
@@ -391,54 +394,27 @@ either a target slot or "first free slot".
 8. Write the header **as given**, except bytes `0x06`–`0x07`, which become the
    new start inode.
 
-## 6. Image file formats
+## 6. Image files
 
-### Detection (loading)
+**This tool** supports one image format: **`.mpk`**, the 32 768 raw pak bytes,
+nothing else. Every command that writes an image writes this format, whatever
+the file's extension.
 
-Detection checks file size first, then content:
+A file of any other size is read as raw data: its first 32 KiB, zero-padded if
+it is shorter. `ls` lists it with a warning, so it can be inspected, but `rm`,
+`insert` and `adapter write` refuse it, and nothing saves it back.
 
-| Condition                                | Format    | Notes                                    |
-|------------------------------------------|-----------|------------------------------------------|
-| size = 32 768                            | **MPK**   | Raw pak                                  |
-| size = 65 536, 98 304 or 131 072         | **MPK4**  | Only the first 32 kB is used             |
-| starts with ASCII `123-456-STD`          | **N64**   | DexDrive, see below                      |
-| anything else                            | *Invalid* | First 32 kB copied as raw, zero-padded   |
+### Formats that are not supported
 
-An image loaded as *Invalid* can be read and listed, but in-place edits (`rm`,
-`insert`) refuse to save it rather than guess a format.
+- **N64 (DexDrive):** files starting with `123-456-STD`, with a 256-byte comment
+  per note slot at `0x40` and the pak data at `0x1040`. 
+- **MPK4:** a 128 KiB file written as four copies of the 32 KiB pak, and any 64,
+  96 or 128 KiB file read using only its first 32 KiB. Real 128 KiB files could
+  be dumps of switch-selected "4x" paks, holding four different paks, or of true
+  multi-bank paks (section 1).
 
-### Choosing an output format
-
-The format comes from the extension: `*.n64` (any case) writes **N64**, and
-everything else, including `.mpk`, writes **MPK** (32 kB). MPK4 is only written
-when asked for explicitly (`mpk`, `mpk4`, `n64`).
-
-### MPK
-
-The 32 768 raw pak bytes, nothing else.
-
-### MPK4
-
-The 32 kB pak repeated **4 times** (131 072 bytes). When reading a 2×, 3× or 4×
-file, only the first copy is used.
-
-### N64 (DexDrive)
-
-| Offset            | Size   | Contents                                              |
-|-------------------|--------|-------------------------------------------------------|
-| `0x0000`          | 11     | Magic `123-456-STD` (ASCII)                           |
-| `0x000B`–`0x003F` | 53     | Header fields; written as zeros, ignored on read      |
-| `0x0040`          | 16×256 | One comment per note slot, slot `i` at `0x40 + i×256` |
-| `0x1040`          | 32 768 | Raw pak data                                          |
-
-Total size when written: **`0x9040` (36 928) bytes**.
-
-Comments are NUL-terminated byte strings. When reading, each 256-byte field is
-cut at the first NUL. When writing, at most **255 bytes** are stored, so a
-terminating NUL is always left. Comments belong to slots, not to note data: the
-tool clears a slot's comment when the note is deleted or replaced. When reading,
-truncated files are tolerated: missing comments stay empty and missing data
-bytes stay zero.
+Such files are handled as the wrong size. A multi-bank dump is still
+recognised from its ID block and rejected as multi-bank (section 1).
 
 ## 7. Note files
 
