@@ -122,8 +122,8 @@ intact**, since that's what the backups are for. If no copy passes, the pak is
 reported as not formatted or corrupted. Nothing else in sector 0 is checked.
 
 Copies that fail their checksums, or differ from the copy in use, are reported
-as damaged. `ls` and `adapter read` print a warning naming them, but the pak
-reads normally.
+as damaged, but the pak reads normally. `adapter read` prints a warning naming
+them, and `ls` lists them among the repairs it recommends (section 5). `repair` rewrites them from the copy in use (section 5).
 
 
 ### Format template
@@ -171,8 +171,8 @@ Sector 2 is an exact copy of sector 1. Because each copy has its own checksum,
 a reader can fall back to the backup if the primary is damaged.
 
 `osPfsChecker` in Nintendo's library repairs damaged TOCs and note tables,
-usually losing data. **This tool** doesn't repair anything: a broken chain just
-makes the slot appear empty (section 4).
+usually losing data. **This tool** only reads the TOC as it is; `repair`
+(section 5) fixes a damaged TOC copy and frees blocks that belong to no note.
 
 ### Checksum
 
@@ -285,7 +285,8 @@ A used slot is one of two things:
   "filesystem is corrupted". A damaged note is **never treated as free**:
   `insert` without `-s` skips it, and `insert -s N` asks before overwriting it.
   Its blocks can't be traced, so they stay marked as used after it is
-  overwritten.
+  overwritten. `repair` (section 5) removes damaged notes and frees their
+  blocks.
 
 ### Following the block chain
 
@@ -376,7 +377,8 @@ either a target slot or "first free slot".
      space.
 3. Fail with no space if the note needs more blocks than are free.
 4. Delete the existing note in the slot if it is readable. Otherwise zero the
-   header, which leaves a damaged note's blocks allocated.
+   header, which leaves a damaged note's blocks allocated until `repair` frees
+   them.
 5. **Allocate** by scanning blocks from `0x05` up, taking the lowest free blocks
    and **linking them in reverse**:
    ```
@@ -393,6 +395,39 @@ either a target slot or "first free slot".
 7. Write the TOC (alternate first).
 8. Write the header **as given**, except bytes `0x06`–`0x07`, which become the
    new start inode.
+
+### Repair
+
+`mempak repair PAKFILE` does what it can for a damaged image, much like
+`osPfsChecker` and `osPfsRepairId` in Nintendo's library:
+
+1. **ID blocks:** every copy that fails its checksums, or differs from the
+   first intact copy, is rewritten from that copy.
+2. **TOC:** if the two TOC copies differ (one fails its checksum, or is out of
+   date), both are rewritten from the copy in use, as chosen in section 3.
+3. **Damaged notes** (used slots whose chain is broken, section 4) are
+   removed: their header is zeroed.
+4. **Orphaned blocks:** every block in `0x05`–`0x7F` whose TOC entry isn't
+   `0x03` (free) and that isn't part of a readable note's chain is set to
+   `0x03`. This frees the blocks of removed notes, including the parts of a
+   broken chain that could still be followed, and blocks left behind by
+   overwriting a damaged note. When several damaged notes exist, their blocks
+   can't be told apart, so all of them are freed together.
+
+`ls` runs the same repair on a copy of the image. If it would change anything,
+`ls` ends with a recommendation to run `mempak repair`, listing the repairs.
+This also reveals damage `ls` doesn't otherwise show, such as a mismatched TOC
+copy or orphaned blocks.
+
+It can't help when no ID block copy is intact, when neither TOC copy passes its
+checksum, or on a multi-bank pak; it then changes nothing. Cross-linked chains
+(two readable notes sharing a block) aren't detected. Neither are TOC entries
+0–4, the reserved entries.
+
+Removed notes and freed blocks lose their data, so the command lists the
+repairs and asks before changing anything (`-y` skips the question). It first
+copies the original file, byte for byte, to `PAKFILE.bak`, and refuses to run
+if that file already exists.
 
 ## 6. Image files
 

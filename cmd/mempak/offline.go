@@ -101,10 +101,6 @@ func newLsCmd() *cobra.Command {
 				return errSilent
 			}
 			fmt.Fprintf(stdout, "Blocks used: %d / %d\n\n", mempak.TotalBlocks-free, mempak.TotalBlocks)
-			// No flushStdout() here: a mid-listing flush lets 'ls | grep -q' close
-			// the pipe early and kill us with SIGPIPE. A terminal is unbuffered
-			// anyway, so the warning still appears in place there.
-			warnDamagedID(img)
 
 			for slot := range mempak.NumNotes {
 				fmt.Fprintf(stdout, "Note %2d: ", slot)
@@ -127,6 +123,7 @@ func newLsCmd() *cobra.Command {
 				}
 				fmt.Fprintln(stdout)
 			}
+			recommendRepair(img, a[0])
 			return nil
 		},
 	}
@@ -158,8 +155,8 @@ func newRmCmd() *cobra.Command {
 				return fmt.Errorf("note %d is already free", slot)
 			}
 			if !n.Valid {
-				return fmt.Errorf("note %d is damaged (broken block chain), so its blocks cannot be freed; "+
-					"replace it with 'mempak insert -s %d' instead", slot, slot)
+				return fmt.Errorf("note %d is damaged (broken block chain), so its blocks cannot be traced; "+
+					"use 'mempak repair' to remove it and free its blocks", slot)
 			}
 			fmt.Fprintf(stdout, "Deleting note %d: %s (%d blocks)\n", slot, n.RawName(), n.Blocks)
 			if err := img.DeleteNote(slot); err != nil {

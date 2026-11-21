@@ -83,6 +83,7 @@ func newRootCmd() *cobra.Command {
 		newExtractCmd(),
 		newInsertCmd(),
 		newFormatCmd(),
+		newRepairCmd(),
 		&cobra.Command{
 			Use:   "version",
 			Short: "Show the version",

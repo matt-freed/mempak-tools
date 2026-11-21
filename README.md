@@ -32,6 +32,7 @@ mempak rm PAKFILE NOTE                                    Delete a note
 mempak extract PAKFILE NOTE OUTFILE                       Export a note to a note file
 mempak insert [-s N [-o]] PAKFILE NOTEFILE                Import a note file
 mempak format OUTFILE                                     Create an empty image
+mempak repair [-y] PAKFILE                                Repair a damaged image (keeps PAKFILE.bak)
 ```
 
 Run `mempak COMMAND --help` or `mempak adapter COMMAND --help` for each command's options.
@@ -55,7 +56,7 @@ instead, and a game will then need to format the pak before using it.
 
 ### Image files
 
-The only image format is `.mpk`: the raw 32 KiB contents of a pak, byte for byte.
+The only supported image format is `.mpk`: the raw 32 KiB contents of a pak, byte for byte.
 Other formats, such as DexDrive `.n64` files and 128 KiB "MPK4" files, are not
 supported, because their real layouts can't be checked without the original
 hardware or files. A file that isn't exactly 32 KiB can still be listed with `ls`
@@ -77,6 +78,30 @@ Note slots are numbered 0–15, as shown by `mempak ls`.
 Without `-s`, `insert` puts the note in the first free slot. In scripts, where there is
 nobody to answer the question, use `--overwrite` to replace a note: an unanswered prompt
 counts as "no" and the command fails.
+
+### Repairing an image
+
+When `ls` finds damage that can be repaired, it ends its listing with a
+recommendation to run `mempak repair` and the list of repairs.
+
+`mempak repair PAKFILE` checks for and fixes:
+
+- **Damaged ID block copies:** rewritten from an intact copy.
+- **A damaged or out-of-date TOC copy:** rewritten from the valid copy.
+- **Damaged notes** (shown as `damaged` by `ls`): removed.
+- **Orphaned blocks** (marked used but belonging to no note): freed.
+
+It lists the repairs and asks before changing anything (`-y` skips the
+question). The original file is first saved as `PAKFILE.bak`; if that file
+already exists, `repair` stops, so an earlier backup is never overwritten.
+
+To repair a pak, read it, repair the image, and write it back:
+
+```sh
+mempak adapter read pak.mpk
+mempak repair pak.mpk
+mempak adapter write --verify pak.mpk
+```
 
 ### Example
 
