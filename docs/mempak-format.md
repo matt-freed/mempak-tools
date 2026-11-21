@@ -112,17 +112,16 @@ game is running looks to it like a new pak.
 damaged. Games then offer to repair it with `osPfsRepairId`; nothing repairs it
 automatically.
 
-**This tool** considers a pak formatted only if the first 16 bytes of the four
-ID blocks match:
+**This tool** checks both checksums of each ID block copy, in order: primary
+(`0x20`), then backups at `0x60`, `0x80` and `0xC0`. The first copy that passes
+is the one in use, and the pak counts as formatted while **at least one copy is
+intact**, since that's what the backups are for. If no copy passes, the pak is
+reported as not formatted or corrupted. Nothing else in sector 0 is checked.
 
-```
-h[0x20:0x30] == h[0x60:0x70]
-h[0x80:0x90] == h[0xC0:0xD0]
-h[0x20:0x30] == h[0x80:0x90]
-```
+Copies that fail their checksums, or differ from the copy in use, are reported
+as damaged. `ls` and `adapter read` print a warning naming them, but the pak
+reads normally.
 
-It doesn't verify the ID block checksums, and nothing else in sector 0 is
-checked.
 
 ### Format template
 

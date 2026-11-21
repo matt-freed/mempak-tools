@@ -276,6 +276,8 @@ func newReadCmd() *cobra.Command {
 			fmt.Fprintf(os.Stderr, "Wrote '%s' (%s format)\n", outfile, f)
 			if img.Validate() != nil {
 				fmt.Fprintln(os.Stderr, "Warning: the pak contents are not a valid mempak filesystem (unformatted or corrupted)")
+			} else {
+				warnDamagedID(img)
 			}
 			return nil
 		},

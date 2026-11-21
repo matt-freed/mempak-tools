@@ -5,6 +5,7 @@
 package mempak
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"strings"
@@ -59,6 +60,56 @@ var formatHeader = [BlockSize]byte{
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 	0xff, 0xff, 0xff, 0xff, 0x05, 0x1a, 0x5f, 0x13, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 	0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01, 0xff, 0x66, 0x25, 0x99, 0xcd,
+}
+
+// idBlockOffsets are the positions in sector 0 of the four copies of the ID
+// block: the primary copy, then three backups.
+var idBlockOffsets = [...]int{0x20, 0x60, 0x80, 0xC0}
+
+const idBlockSize = 32
+
+// idBlockValid checks an ID block's two checksums. Checksum 1 (at 0x1C) is
+// the sum of the fourteen 16-bit words before it; checksum 2 (at 0x1E) is
+// 0xFFF2 minus checksum 1.
+func idBlockValid(b []byte) bool {
+	var sum uint16
+	for i := 0; i < 0x1C; i += 2 {
+		sum += uint16(b[i])<<8 | uint16(b[i+1])
+	}
+	c1 := uint16(b[0x1C])<<8 | uint16(b[0x1D])
+	c2 := uint16(b[0x1E])<<8 | uint16(b[0x1F])
+	return sum == c1 && c2 == 0xFFF2-c1
+}
+
+// idBlock returns the index (0-3) of the first ID block copy with valid
+// checksums. Like the console, a pak stays usable while any copy is intact.
+func (img *Image) idBlock() (int, error) {
+	h := img.sector(0)
+	for i, off := range idBlockOffsets {
+		if idBlockValid(h[off : off+idBlockSize]) {
+			return i, nil
+		}
+	}
+	return 0, ErrNotFormatted
+}
+
+// DamagedIDBlocks returns the ID block copies (0 = primary, 1-3 = backups)
+// that have bad checksums or differ from the copy in use. They don't stop the
+// pak from being read, but the pak has less protection left.
+func (img *Image) DamagedIDBlocks() ([]int, error) {
+	good, err := img.idBlock()
+	if err != nil {
+		return nil, err
+	}
+	h := img.sector(0)
+	ref := h[idBlockOffsets[good] : idBlockOffsets[good]+idBlockSize]
+	var damaged []int
+	for i, off := range idBlockOffsets {
+		if !bytes.Equal(h[off:off+idBlockSize], ref) {
+			damaged = append(damaged, i)
+		}
+	}
+	return damaged, nil
 }
 
 // toc is a copy of a TOC sector. Entry i (the "next block" pointer of
@@ -119,11 +170,8 @@ func (img *Image) noteHeader(slot int) []byte {
 
 // validTOC returns the number of the first valid TOC sector (1 or 2).
 func (img *Image) validTOC() (int, error) {
-	h := img.sector(0)
-	if string(h[0x20:0x30]) != string(h[0x60:0x70]) ||
-		string(h[0x80:0x90]) != string(h[0xC0:0xD0]) ||
-		string(h[0x20:0x30]) != string(h[0x80:0x90]) {
-		return 0, ErrNotFormatted
+	if _, err := img.idBlock(); err != nil {
+		return 0, err
 	}
 	for _, n := range []int{1, 2} {
 		var t toc

@@ -5,6 +5,7 @@ package mempak
 import (
 	"bytes"
 	"errors"
+	"slices"
 	"testing"
 )
 
@@ -48,6 +49,48 @@ func TestNewIsValid(t *testing.T) {
 	}
 	if err := wiped.Validate(); !errors.Is(err, ErrNotFormatted) {
 		t.Fatalf("0xFF-filled image: %v", err)
+	}
+}
+
+func TestIDBlockFallback(t *testing.T) {
+	img := New()
+	if d, err := img.DamagedIDBlocks(); err != nil || len(d) != 0 {
+		t.Fatalf("fresh pak: damaged = %v, %v", d, err)
+	}
+
+	h := img.sector(0)
+	h[0x20+0x1C] ^= 0xFF // primary: bad checksum 1
+	// Backup 2: valid checksums, but a different serial than the others.
+	h[0x80] = 0x12
+	sum := uint16(h[0x80+0x1C])<<8 | uint16(h[0x80+0x1D])
+	sum = sum + 0x1200 - 0xFF00 // the word at 0x80 went from 0xFFFF to 0x12FF
+	h[0x80+0x1C], h[0x80+0x1D] = byte(sum>>8), byte(sum)
+	c2 := 0xFFF2 - sum
+	h[0x80+0x1E], h[0x80+0x1F] = byte(c2>>8), byte(c2)
+	if !idBlockValid(h[0x80 : 0x80+idBlockSize]) {
+		t.Fatal("test setup: backup 2 should have valid checksums")
+	}
+
+	if err := img.Validate(); err != nil {
+		t.Fatalf("pak with intact backups rejected: %v", err)
+	}
+	// Backup 1 is the first intact copy, so backup 2 counts as damaged too.
+	if d, _ := img.DamagedIDBlocks(); !slices.Equal(d, []int{0, 2}) {
+		t.Errorf("damaged = %v, want [0 2]", d)
+	}
+
+	for _, off := range idBlockOffsets {
+		h[off+0x1E] ^= 0xFF // bad checksum 2 everywhere
+	}
+	if err := img.Validate(); !errors.Is(err, ErrNotFormatted) {
+		t.Fatalf("all ID blocks damaged: %v", err)
+	}
+
+	// Four matching copies are not enough: they must also pass the checksums.
+	img = New()
+	clear(img.sector(0))
+	if err := img.Validate(); !errors.Is(err, ErrNotFormatted) {
+		t.Fatalf("zeroed ID sector: %v", err)
 	}
 }
 

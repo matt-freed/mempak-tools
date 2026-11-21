@@ -32,6 +32,21 @@ func saveImage(img *mempak.Image, path string) error {
 	return nil
 }
 
+// warnDamagedID tells the user when some copies of the pak's ID block are
+// damaged. The pak still works while one copy is intact.
+func warnDamagedID(img *mempak.Image) {
+	damaged, err := img.DamagedIDBlocks()
+	if err != nil || len(damaged) == 0 {
+		return
+	}
+	names := make([]string, len(damaged))
+	for i, d := range damaged {
+		names[i] = fmt.Sprint(d)
+	}
+	fmt.Fprintf(os.Stderr, "Warning: %d of 4 ID block copies are damaged (copy %s; 0 is the primary). "+
+		"The pak is still readable from the remaining copies.\n", len(damaged), strings.Join(names, ", "))
+}
+
 // code formats a game or publisher code: as text if printable, else in hex.
 func code(b []byte) string {
 	for _, c := range b {
@@ -80,6 +95,8 @@ func newLsCmd() *cobra.Command {
 				return errSilent
 			}
 			fmt.Fprintf(stdout, "Blocks used: %d / %d\n\n", mempak.TotalBlocks-free, mempak.TotalBlocks)
+			flushStdout()
+			warnDamagedID(img)
 
 			for slot := range mempak.NumNotes {
 				fmt.Fprintf(stdout, "Note %2d: ", slot)
