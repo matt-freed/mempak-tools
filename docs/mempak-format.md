@@ -187,9 +187,10 @@ so the checksum is `0x71`.
 
 When entries 1–4 are `0`, as on factory paks, this equals summing every byte
 from offset `0x02` to the end of the page. When they hold other values, only
-entries 5–127 count. Games accept a pak with `0x03` in entries 1–4 (as this
-tool and gcn64tools format it), and they keep those values when rewriting the
-TOC. This has been verified on hardware.
+entries 5–127 count. Games accept a pak with `0x03` in entries 1–4 (as
+other tools formats it), and they keep those values when rewriting the TOC.
+ **This tool** formats with `0` there, like a
+factory pak, so tools using either formula accept its output.
 
 **This tool** sums only the low byte of each entry. Since the high bytes are
 always `0` on a 32 KiB pak, the result is the same; they could only differ on a
@@ -346,12 +347,12 @@ These describe how **this tool** changes a pak.
 
 1. Write the sector 0 template (section 2).
 2. Zero sectors 3 and 4 (the note table).
-3. Build a TOC with all 128 entries set to `00 03`, then set byte 1 to the
-   checksum (`0x71`).
+3. Build a TOC with entries 0–4 set to `00 00` and entries 5–127 set to
+   `00 03`, then set byte 1 to the checksum (`0x71`).
 4. Write that TOC to sectors 1 and 2.
 
-Data sectors 5–127 are left as they were. Step 3 copies gcn64tools: factory
-paks have `0` in entries 1–4 instead, but games ignore those entries
+Data sectors 5–127 are left as they were. The TOC matches a factory pak, so its
+checksum is valid whether it is summed from entry 5 or from offset `0x02`
 (section 3).
 
 ### Delete a note

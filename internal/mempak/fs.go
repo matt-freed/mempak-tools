@@ -233,8 +233,11 @@ func (img *Image) FormatFS() {
 	copy(img.sector(0), formatHeader[:])
 	clear(img.sector(3))
 	clear(img.sector(4))
+	// Entries 0-4 (the reserved sectors) stay 0, as on factory paks. Games
+	// ignore them, but tools that checksum from byte 2 rather than from
+	// entry 5 need them to be 0.
 	var t toc
-	for i := range 128 {
+	for i := blockValidFirst; i <= blockValidLast; i++ {
 		t.setNext(i, blockEmpty)
 	}
 	t[1] = t.checksum()

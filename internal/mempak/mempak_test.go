@@ -407,3 +407,39 @@ func TestCharset(t *testing.T) {
 		}
 	}
 }
+
+// TestFormatTOC checks that a blank TOC matches factory paks: reserved entries
+// 0-4 are 0, every data entry is free, and the checksum (0x71) is the same
+// whether it is summed over entries 5-127 or over every byte from offset 2.
+func TestFormatTOC(t *testing.T) {
+	img := New()
+	for _, s := range []int{1, 2} {
+		sec := img.sector(s)
+		if sec[1] != 0x71 {
+			t.Errorf("TOC %d checksum = 0x%02x, want 0x71", s, sec[1])
+		}
+		if sec[0] != 0 {
+			t.Errorf("TOC %d byte 0 = 0x%02x, want 0", s, sec[0])
+		}
+		for i := 1; i < blockValidFirst; i++ {
+			if sec[2*i] != 0 || sec[2*i+1] != 0 {
+				t.Errorf("TOC %d reserved entry %d = %02x %02x, want 00 00", s, i, sec[2*i], sec[2*i+1])
+			}
+		}
+		for i := blockValidFirst; i <= blockValidLast; i++ {
+			if sec[2*i] != 0 || sec[2*i+1] != blockEmpty {
+				t.Errorf("TOC %d entry %d = %02x %02x, want 00 03", s, i, sec[2*i], sec[2*i+1])
+			}
+		}
+		var sum byte
+		for _, b := range sec[2:] {
+			sum += b
+		}
+		if sum != sec[1] {
+			t.Errorf("TOC %d: sum of bytes 2..255 = 0x%02x, want stored checksum 0x%02x", s, sum, sec[1])
+		}
+	}
+	if n, err := img.FreeBlocks(); err != nil || n != TotalBlocks {
+		t.Errorf("FreeBlocks = %d, %v; want %d", n, err, TotalBlocks)
+	}
+}
