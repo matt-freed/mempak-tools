@@ -19,7 +19,7 @@ All multi-byte integers are **big-endian**.
 | This document | Also called                          |
 |---------------|--------------------------------------|
 | sector, block | page                                 |
-| TOC           | I-NODE area, FAT, index table        |
+| TOC (table of contents) | I-NODE area, FAT, index table |
 | note table    | game note information, directory     |
 | note          | game note, file                      |
 
@@ -263,34 +263,27 @@ The padding byte is only trusted when the CRC matches.
 
 ### This tool
 
-Game and publisher codes are printed as raw bytes. Only byte `0x03` and bytes
-`0x06`–`0x07` are validated. Every other byte is copied unchanged when notes
+Game and publisher codes are printed as raw bytes. The tool checks only whether
+they are zero, plus the start inode in `0x06`–`0x07`. Any non-zero code is
+accepted, including GameShark's. Every other byte is copied unchanged when notes
 are inserted, exported or imported. Only `ext[0]` is shown.
-
-#### Region codes
-
-A header is valid only if byte `0x03` is one of:
-
-`0x00`, `0x37`, `0x41`, `0x44`, `0x45`, `0x46`, `0x49`, `0x4A`, `0x50`,
-`0x53`, `0x55`, `0x58`, `0x59`
-
-(as ASCII: `7 A D E F I J P S U X Y`, plus `0x00`). This list comes from
-libdragon, not from the format itself. GameShark notes (region byte `0xE5`)
-fail the check, so the tool treats them as empty slots and refuses to import
-them.
 
 #### When a slot holds a note
 
-A slot holds a note when **all** of these are true:
+A slot is **used** when its game code and its publisher code are **both
+non-zero**, and **free** when either one is zero. A deleted note's header is
+cleared to 32 zero bytes.
 
-1. The start inode is in `0x0005`–`0x007F`.
-2. The region code is in the list above.
-3. The block chain starting at that inode is valid (see below).
+A used slot is one of two things:
 
-If 1 or 2 fails, the slot is empty. If 3 fails, the slot is also shown as empty,
-and reading its data fails with "filesystem is corrupted".
-
-Empty slots are cleared to 32 zero bytes when a note is deleted.
+- **A note:** the start inode is in `0x0005`–`0x007F` and the block chain
+  starting there is valid (see below).
+- **A damaged note:** anything else. `ls` shows it as
+  `(damaged: broken block chain)`. Reading, exporting or deleting it fails with
+  "filesystem is corrupted". A damaged note is **never treated as free**:
+  `insert` without `-s` skips it, and `insert -s N` asks before overwriting it.
+  Its blocks can't be traced, so they stay marked as used after it is
+  overwritten.
 
 ### Following the block chain
 
@@ -371,15 +364,17 @@ Data sectors are not cleared.
 Input: a 32-byte header, data that is a non-zero multiple of 256 bytes, and
 either a target slot or "first free slot".
 
-1. Reject the note if the header's region code is invalid.
+1. Reject the note if its game code or publisher code is zero. Otherwise it
+   would read back as a free slot.
 2. Pick a slot:
-   - **Target slot:** blocks used by a note already in that slot count as free
+   - **Target slot:** blocks used by a readable note already in that slot count
+     as free space.
+   - **First free slot:** use the lowest free slot (zero game or publisher
+     code). Damaged notes are skipped. If there is no free slot, fail with no
      space.
-   - **First free slot:** use the lowest slot whose header fails the
-     inode/region check. If there is none, fail with no space.
 3. Fail with no space if the note needs more blocks than are free.
-4. Delete the existing note in the slot if there is one; otherwise zero the
-   header.
+4. Delete the existing note in the slot if it is readable. Otherwise zero the
+   header, which leaves a damaged note's blocks allocated.
 5. **Allocate** by scanning blocks from `0x05` up, taking the lowest free blocks
    and **linking them in reverse**:
    ```
@@ -465,8 +460,8 @@ Copy the slot's header, replace the inode with `0xCAFE`, then append the data.
 A note file is accepted only if **all** of these are true:
 
 1. It is at least 32 bytes and bytes `0x06`–`0x07` are `CA FE`.
-2. After setting the inode to `0x0005` as a placeholder, the header passes the
-   inode/region check, so the region code must be valid.
+2. Its game code and publisher code are both non-zero. The inode is then set to
+   `0x0005` as a placeholder until `insert` allocates blocks.
 3. The data after the header is a non-zero multiple of 256 bytes.
 
 The header is then inserted as described in section 5, keeping all its other

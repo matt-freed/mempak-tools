@@ -88,11 +88,15 @@ func newLsCmd() *cobra.Command {
 					fmt.Fprintln(stdout, "Error!")
 					continue
 				}
-				if !n.Valid {
+				if !n.Used {
 					fmt.Fprintln(stdout, "Free")
 					continue
 				}
-				fmt.Fprintf(stdout, "%s (%3d blocks)", padRight(n.Name(), 20), n.Blocks)
+				size := fmt.Sprintf("(%3d blocks)", n.Blocks)
+				if !n.Valid {
+					size = "(damaged: broken block chain)"
+				}
+				fmt.Fprintf(stdout, "%s %s", padRight(n.Name(), 20), size)
 				if verbose {
 					fmt.Fprintf(stdout, "  game %s  publisher %s", code(n.GameCode()), code(n.Publisher()))
 				}
@@ -128,8 +132,12 @@ func newRmCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("could not get note %d: %w", slot, err)
 			}
-			if !n.Valid {
+			if !n.Used {
 				return fmt.Errorf("note %d is already free", slot)
+			}
+			if !n.Valid {
+				return fmt.Errorf("note %d is damaged (broken block chain), so its blocks cannot be freed; "+
+					"replace it with 'mempak insert -s %d' instead", slot, slot)
 			}
 			fmt.Fprintf(stdout, "Deleting note %d: %s (%d blocks)\n", slot, n.RawName(), n.Blocks)
 			if err := img.DeleteNote(slot); err != nil {
@@ -207,8 +215,12 @@ func newInsertCmd() *cobra.Command {
 				return fmt.Errorf("could not import note '%s': %w", a[1], err)
 			}
 			if slot >= 0 {
-				if old, err := img.Note(slot); err == nil && old.Valid {
-					if !overwrite && !confirm(cmd.Context(), fmt.Sprintf("Slot %d holds note '%s'. Overwrite it?", slot, old.Name())) {
+				if old, err := img.Note(slot); err == nil && old.Used {
+					what := "note"
+					if !old.Valid {
+						what = "damaged note"
+					}
+					if !overwrite && !confirm(cmd.Context(), fmt.Sprintf("Slot %d holds %s '%s'. Overwrite it?", slot, what, old.Name())) {
 						return errors.New("cancelled")
 					}
 					fmt.Fprintf(stdout, "Overwriting note %d\n", slot)

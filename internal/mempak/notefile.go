@@ -21,8 +21,8 @@ func ParseNoteFile(b []byte) (header [noteHeaderSize]byte, data []byte, err erro
 	copy(header[:], b)
 	header[6], header[7] = 0x00, blockValidFirst
 
-	if !headerValid(header[:]) {
-		return header, nil, errors.New("error loading note (invalid)")
+	if !slotUsed(header[:]) {
+		return header, nil, errNoCodes
 	}
 	data = b[noteHeaderSize:]
 	if len(data) == 0 || len(data)%BlockSize != 0 {
@@ -37,10 +37,10 @@ func (img *Image) ExportNote(slot int) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if !n.Valid {
+	if !n.Used {
 		return nil, ErrSlotEmpty
 	}
-	data, err := img.NoteData(slot)
+	data, err := img.NoteData(slot) // fails with ErrCorrupt for a damaged note
 	if err != nil {
 		return nil, err
 	}

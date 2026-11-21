@@ -172,6 +172,6 @@ libdragon (public domain).
 [libdragon](https://github.com/DragonMinded/libdragon) is an open-source SDK for N64
 homebrew, written by the community as an alternative to Nintendo's official SDK
 (libultra). This tool's Controller Pak filesystem code is based on libdragon's
-`mempak.c`. So some rules in this tool, such as which
-region codes make a note valid, are libdragon conventions rather than part of
-Nintendo's format. The [format spec](docs/mempak-format.md) marks where that applies.
+`mempak.c`. So some rules in this tool, such as how blocks are allocated for
+an inserted note, are libdragon conventions rather than part of Nintendo's
+format. The [format spec](docs/mempak-format.md) marks where that applies.

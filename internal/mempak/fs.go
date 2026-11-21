@@ -39,6 +39,8 @@ var (
 	ErrSlotEmpty = errors.New("note slot is empty")
 	// ErrBadSlot means the note slot number is out of range.
 	ErrBadSlot = errors.New("note slot out of range")
+
+	errNoCodes = errors.New("note has a zero game code or publisher code")
 )
 
 // sector-0 template used by format, as found on official paks.
@@ -186,7 +188,11 @@ type Note struct {
 	Header [noteHeaderSize]byte
 	// Blocks is the number of blocks the note uses.
 	Blocks int
-	// Valid is false for a free (or unreadable) slot.
+	// Used is true when the slot is taken: its game and publisher codes are
+	// both non-zero.
+	Used bool
+	// Valid is true for a used slot whose block chain is readable. A slot that
+	// is Used but not Valid is damaged: it must not be treated as free.
 	Valid bool
 }
 
@@ -196,8 +202,7 @@ func (n *Note) GameCode() []byte { return n.Header[0:4] }
 // Publisher returns the 2-byte publisher code.
 func (n *Note) Publisher() []byte { return n.Header[4:6] }
 
-func (n *Note) region() byte { return n.Header[3] }
-func (n *Note) inode() int   { return int(n.Header[6])<<8 | int(n.Header[7]) }
+func (n *Note) inode() int { return int(n.Header[6])<<8 | int(n.Header[7]) }
 
 // RawName returns the 16-character name and the first extension character,
 // joined by a dot and with their padding left in.
@@ -224,18 +229,16 @@ func (n *Note) Name() string {
 	return name
 }
 
-func validRegion(r byte) bool {
-	switch r {
-	case 0x00, 0x37, 0x41, 0x44, 0x45, 0x46, 0x49, 0x4A, 0x50, 0x53, 0x55, 0x58, 0x59:
-		return true
-	}
-	return false
-}
-
-// headerValid reports whether a note-table entry describes a note.
-func headerValid(h []byte) bool {
-	inode := int(h[6])<<8 | int(h[7])
-	return inode >= blockValidFirst && inode <= blockValidLast && validRegion(h[3])
+// slotUsed reports whether a note-table entry is taken. Nintendo's library
+// treats an entry as free when its game code or publisher code is zero (the
+// manual gives both ranges as starting at 1). The start block and the region
+// are not part of this test: an entry with a bad start block is a damaged
+// note, not a free slot, and any game code is allowed (e.g. GameShark's
+// 0x3BADD1E5).
+func slotUsed(h []byte) bool {
+	game := int(h[0])<<24 | int(h[1])<<16 | int(h[2])<<8 | int(h[3])
+	publisher := int(h[4])<<8 | int(h[5])
+	return game != 0 && publisher != 0
 }
 
 // Note returns the note in slot (0-15).
@@ -253,7 +256,8 @@ func (img *Image) Note(slot int) (Note, error) {
 func (img *Image) note(t *toc, slot int) Note {
 	n := Note{Slot: slot}
 	copy(n.Header[:], img.noteHeader(slot))
-	if !headerValid(n.Header[:]) {
+	n.Used = slotUsed(n.Header[:])
+	if !n.Used {
 		return n
 	}
 	if blocks, err := t.chain(n.inode()); err == nil {
@@ -273,12 +277,12 @@ func (img *Image) NoteData(slot int) ([]byte, error) {
 		return nil, err
 	}
 	n := img.note(&t, slot)
-	if !n.Valid {
+	if !n.Used {
 		return nil, ErrSlotEmpty
 	}
 	blocks, err := t.chain(n.inode())
 	if err != nil {
-		return nil, err
+		return nil, err // a damaged note
 	}
 	data := make([]byte, 0, len(blocks)*BlockSize)
 	for _, b := range blocks {
@@ -297,12 +301,12 @@ func (img *Image) DeleteNote(slot int) error {
 		return err
 	}
 	n := img.note(&t, slot)
-	if !n.Valid {
+	if !n.Used {
 		return ErrSlotEmpty
 	}
 	blocks, err := t.chain(n.inode())
 	if err != nil {
-		return err
+		return err // a damaged note: its blocks cannot be traced to free them
 	}
 	clear(img.noteHeader(slot))
 	for _, b := range blocks {
@@ -316,9 +320,11 @@ func (img *Image) DeleteNote(slot int) error {
 // must be a whole number of blocks.
 //
 // With slot set to -1 the note goes to the first free slot. Otherwise it goes
-// to that slot, replacing any note already there. The header is stored as is
-// apart from the inode, so the note keeps its game code, publisher code and
-// name.
+// to that slot, replacing any note already there. A damaged note in that slot
+// is overwritten too, but its blocks stay allocated since its chain cannot be
+// followed. The header is stored as is apart from the inode, so the note keeps
+// its game code, publisher code and name; both codes must be non-zero, or the
+// note would read back as a free slot.
 //
 // It returns the slot used.
 func (img *Image) InsertNote(header [noteHeaderSize]byte, data []byte, slot int) (int, error) {
@@ -328,8 +334,8 @@ func (img *Image) InsertNote(header [noteHeaderSize]byte, data []byte, slot int)
 	if len(data) == 0 || len(data)%BlockSize != 0 {
 		return 0, fmt.Errorf("note data is not a whole number of blocks")
 	}
-	if !validRegion(header[3]) {
-		return 0, fmt.Errorf("note has an invalid region code 0x%02x", header[3])
+	if !slotUsed(header[:]) {
+		return 0, errNoCodes
 	}
 	nblocks := len(data) / BlockSize
 
@@ -347,7 +353,7 @@ func (img *Image) InsertNote(header [noteHeaderSize]byte, data []byte, slot int)
 	} else {
 		slot = -1
 		for i := range NumNotes {
-			if !headerValid(img.noteHeader(i)) {
+			if !slotUsed(img.noteHeader(i)) {
 				slot = i
 				break
 			}
@@ -365,7 +371,8 @@ func (img *Image) InsertNote(header [noteHeaderSize]byte, data []byte, slot int)
 			return 0, err
 		}
 	} else {
-		// The slot may hold an unreadable entry; it is free either way.
+		// The slot is free, or holds a damaged note the caller chose to
+		// overwrite.
 		clear(img.noteHeader(slot))
 	}
 

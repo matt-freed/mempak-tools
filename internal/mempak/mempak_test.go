@@ -176,9 +176,96 @@ func TestParseNoteFileErrors(t *testing.T) {
 		t.Error("partial block accepted")
 	}
 	bad = bytes.Clone(note)
-	bad[3] = 'Z' // invalid region
-	if _, _, err := ParseNoteFile(bad); err == nil {
-		t.Error("invalid region accepted")
+	bad[4], bad[5] = 0, 0 // no publisher code: it would read back as a free slot
+	if _, _, err := ParseNoteFile(bad); !errors.Is(err, errNoCodes) {
+		t.Errorf("zero publisher code: %v", err)
+	}
+	bad = bytes.Clone(note)
+	copy(bad, []byte{0, 0, 0, 0})
+	if _, _, err := ParseNoteFile(bad); !errors.Is(err, errNoCodes) {
+		t.Errorf("zero game code: %v", err)
+	}
+	h, d, _ := ParseNoteFile(note)
+	h[4], h[5] = 0, 0
+	if _, err := New().InsertNote(h, d, -1); !errors.Is(err, errNoCodes) {
+		t.Errorf("InsertNote with zero publisher code: %v", err)
+	}
+}
+
+// gameSharkNote is a note with the non-ASCII codes Datel's GameShark writes.
+func gameSharkNote() []byte {
+	b := testNote(1, 9)
+	copy(b, []byte{0x3B, 0xAD, 0xD1, 0xE5, 0xFA, 0xDE})
+	return b
+}
+
+func TestAnyGameCodeIsANote(t *testing.T) {
+	img := New()
+	if slot := insert(t, img, gameSharkNote(), -1); slot != 0 {
+		t.Fatalf("GameShark note went to slot %d", slot)
+	}
+	n, err := img.Note(0)
+	if err != nil || !n.Used || !n.Valid || n.Blocks != 1 {
+		t.Fatalf("GameShark note = %+v, %v", n, err)
+	}
+	out, err := img.ExportNote(0)
+	if err != nil || !bytes.Equal(out, gameSharkNote()) {
+		t.Fatalf("GameShark note export: %v", err)
+	}
+}
+
+// damage makes the note in slot unreadable: its start block points nowhere.
+func damage(img *Image, slot int) {
+	h := img.noteHeader(slot)
+	h[6], h[7] = 0, 0
+}
+
+func TestDamagedNote(t *testing.T) {
+	img := New()
+	insert(t, img, testNote(2, 0), -1)
+	damage(img, 0)
+
+	n, err := img.Note(0)
+	if err != nil || !n.Used || n.Valid {
+		t.Fatalf("damaged note = %+v, %v", n, err)
+	}
+	if _, err := img.NoteData(0); !errors.Is(err, ErrCorrupt) {
+		t.Errorf("NoteData: %v", err)
+	}
+	if _, err := img.ExportNote(0); !errors.Is(err, ErrCorrupt) {
+		t.Errorf("ExportNote: %v", err)
+	}
+	if err := img.DeleteNote(0); !errors.Is(err, ErrCorrupt) {
+		t.Errorf("DeleteNote: %v", err)
+	}
+	if _, err := img.NoteData(1); !errors.Is(err, ErrSlotEmpty) {
+		t.Errorf("NoteData of a free slot: %v", err)
+	}
+
+	// Replacing it on purpose works; its blocks can't be traced, so they stay used.
+	insert(t, img, testNote(1, 1), 0)
+	if n, _ := img.Note(0); !n.Valid || n.Blocks != 1 {
+		t.Fatalf("replacement note = %+v", n)
+	}
+	if free, _ := img.FreeBlocks(); free != TotalBlocks-3 {
+		t.Errorf("free = %d, want %d", free, TotalBlocks-3)
+	}
+}
+
+// The first free slot must skip every slot that is in use, even ones this
+// tool can't read, instead of overwriting them.
+func TestInsertSkipsUsedSlots(t *testing.T) {
+	img := New()
+	insert(t, img, gameSharkNote(), -1)
+	insert(t, img, testNote(1, 1), -1)
+	damage(img, 1)
+	before := bytes.Clone(img.Data[noteTableOffset : noteTableOffset+2*noteHeaderSize])
+
+	if slot := insert(t, img, testNote(1, 2), -1); slot != 2 {
+		t.Fatalf("inserted into slot %d, want 2", slot)
+	}
+	if !bytes.Equal(img.Data[noteTableOffset:noteTableOffset+2*noteHeaderSize], before) {
+		t.Error("headers of slots 0-1 changed")
 	}
 }
 
