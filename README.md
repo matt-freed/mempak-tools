@@ -28,8 +28,8 @@ mempak adapter write [OPTIONS] [-y] [--verify] INFILE     Write an image file to
 mempak adapter erase [OPTIONS] [-y] [--fill-ff]           Erase the mempak
 
 mempak ls [-v] PAKFILE                                    List notes
-mempak rm PAKFILE NOTE                                    Delete a note
-mempak extract PAKFILE NOTE OUTFILE                       Export a note to a note file
+mempak rm PAKFILE SLOT                                    Delete a note
+mempak extract PAKFILE SLOT OUTFILE                       Export a note to a note file
 mempak insert [-s N [-o]] PAKFILE NOTEFILE                Import a note file
 mempak format OUTFILE                                     Create an empty image
 mempak repair [-y] PAKFILE                                Repair a damaged image (keeps PAKFILE.bak)

@@ -136,9 +136,9 @@ func newLsCmd() *cobra.Command {
 
 func newRmCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "rm PAKFILE NOTE",
+		Use:   "rm PAKFILE SLOT",
 		Short: "Delete a note",
-		Long: "Delete note NOTE (0-15, as shown by 'mempak ls') from a mempak image.\n" +
+		Long: "Delete the note in slot SLOT (0-15, as shown by 'mempak ls') from a mempak image.\n" +
 			"The image file is modified in place.",
 		Args: args(cobra.ExactArgs(2)),
 		RunE: func(cmd *cobra.Command, a []string) error {
@@ -172,9 +172,9 @@ func newRmCmd() *cobra.Command {
 
 func newExtractCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "extract PAKFILE NOTE OUTFILE",
+		Use:   "extract PAKFILE SLOT OUTFILE",
 		Short: "Export a note to a note file",
-		Long:  "Export note NOTE (0-15, as shown by 'mempak ls') to a standalone note file.",
+		Long:  "Export the note in slot SLOT (0-15, as shown by 'mempak ls') to a standalone note file.",
 		Args:  args(cobra.ExactArgs(3)),
 		RunE: func(cmd *cobra.Command, a []string) error {
 			slot, err := parseSlot(a[1])
