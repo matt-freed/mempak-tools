@@ -67,6 +67,12 @@ grep -q "Blocks used: 2 / 123" ls.txt || fail "insert: expected 2 used blocks"
 grep -q "Note  0: TEST" ls.txt || fail "insert: note 0 should be TEST"
 pass "insert"
 
+# ls -v shows codes and the game title from the code table
+"$MEMPAK" ls -v pak.mpk > ls.txt
+grep -q "Note  0: TEST .*  game NSME  publisher 01  Super Mario 64 (USA)$" ls.txt ||
+	fail "ls -v: note 0 should show codes and title"
+pass "ls -v"
+
 # insert into a specific slot
 "$MEMPAK" insert -s 5 pak.mpk test.note > /dev/null
 "$MEMPAK" ls pak.mpk | grep -q "Note  5: TEST" || fail "insert -s 5: note 5 should be TEST"

@@ -120,6 +120,9 @@ func newLsCmd() *cobra.Command {
 				fmt.Fprintf(stdout, "%s %s", padRight(n.Name(), 20), size)
 				if verbose {
 					fmt.Fprintf(stdout, "  game %s  publisher %s", code(n.GameCode()), code(n.Publisher()))
+					if name, ok := mempak.GameName(n.GameCode()); ok {
+						fmt.Fprintf(stdout, "  %s", name)
+					}
 				}
 				fmt.Fprintln(stdout)
 			}
@@ -127,7 +130,7 @@ func newLsCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "also show game and publisher codes")
+	cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "also show game and publisher codes, and the game's title when known")
 	return cmd
 }
 

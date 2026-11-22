@@ -71,7 +71,7 @@ Note slots are numbered 0–15, as shown by `mempak ls`.
 
 | Option | Meaning |
 |---|---|
-| `ls -v, --verbose` | Also show each note's game code (its last character is the region) and publisher code. |
+| `ls -v, --verbose` | Also show each note's game code (its last character is the region) and publisher code, and the game's title when the code is a known retail cartridge. |
 | `insert -s, --slot N` | Write the note to slot N. If the slot already holds a note, you are asked before it is replaced. |
 | `insert -o, --overwrite` | With `-s`, replace an existing note without asking. |
 
