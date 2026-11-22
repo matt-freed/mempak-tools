@@ -240,7 +240,11 @@ There are 16 note slots (0–15). Each has a 32-byte header at
 - **Datel GameShark** is an exception: it writes the non-ASCII game code
   `0x3BADD1E5` and publisher code `0xFADE`.
 - **Status:** bit flags. Bit `0x02` should always be set. Values seen on real
-  paks are `0x02` and `0x82`.
+  paks are `0x02` and `0x82`. Nintendo's library writes `0x02` ("occupied")
+  when it creates a note, but it decides whether a slot is used from the game
+  and publisher codes, not from this byte, and so does this tool. The meaning
+  of bit `0x80` is not documented and has not been seen to change how a note
+  behaves. 
 - **Byte `0x09`:** commonly `0x03` or `0x19`.
 - **Extension:** `ext[0]` is `0x00` for a game's main note and `0x10`–`0x33`
   (`0`–`9`, `A`–`Z`) for extra notes. By convention the second note uses
