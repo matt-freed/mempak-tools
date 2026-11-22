@@ -198,6 +198,48 @@ func newExtractCmd() *cobra.Command {
 	}
 }
 
+func newInspectCmd() *cobra.Command {
+	var hex bool
+	cmd := &cobra.Command{
+		Use:   "inspect NOTEFILE",
+		Short: "Show what a note file holds",
+		Long: "Show the name, game and publisher codes and size of a note file, as written by\n" +
+			"'mempak extract'. With -x, also hex dump its header and data.",
+		Args: args(cobra.ExactArgs(1)),
+		RunE: func(cmd *cobra.Command, a []string) error {
+			b, err := os.ReadFile(a[0])
+			if err != nil {
+				return err
+			}
+			n, data, err := mempak.ReadNoteFile(b)
+			if err != nil {
+				return fmt.Errorf("could not read note '%s': %w", a[0], err)
+			}
+			fmt.Fprintf(stdout, "Note file: %s\n", a[0])
+			fmt.Fprintf(stdout, "Name:      %s\n", n.Name())
+			fmt.Fprintf(stdout, "Game code: %s", code(n.GameCode()))
+			if name, ok := mempak.GameName(n.GameCode()); ok {
+				fmt.Fprintf(stdout, " (%s)", name)
+			}
+			fmt.Fprintln(stdout)
+			fmt.Fprintf(stdout, "Publisher: %s\n", code(n.Publisher()))
+			fmt.Fprintf(stdout, "Status:    0x%02x\n", n.Header[0x08])
+			fmt.Fprintf(stdout, "Size:      %d blocks (%d bytes of data)\n", n.Blocks, len(data))
+			if !hex {
+				return nil
+			}
+			fmt.Fprintln(stdout, "\nHeader:")
+			if err := mempak.Hexdump(stdout, n.Header[:]); err != nil {
+				return err
+			}
+			fmt.Fprintln(stdout, "\nData (offsets from the start of the data):")
+			return mempak.Hexdump(stdout, data)
+		},
+	}
+	cmd.Flags().BoolVarP(&hex, "hex", "x", false, "also hex dump the note's header and data")
+	return cmd
+}
+
 func newInsertCmd() *cobra.Command {
 	var slotStr string
 	var overwrite bool

@@ -48,3 +48,16 @@ func (img *Image) ExportNote(slot int) ([]byte, error) {
 	out[6], out[7] = noteFileMarker>>8, noteFileMarker&0xFF
 	return append(out, data...), nil
 }
+
+// ReadNoteFile parses a note file for display. It applies the same checks as
+// ParseNoteFile, but the returned Note keeps the file's header verbatim,
+// including its 0xCAFE inode. Its Slot is -1.
+func ReadNoteFile(b []byte) (Note, []byte, error) {
+	_, data, err := ParseNoteFile(b)
+	if err != nil {
+		return Note{}, nil, err
+	}
+	n := Note{Slot: -1, Blocks: len(data) / BlockSize, Used: true, Valid: true}
+	copy(n.Header[:], b)
+	return n, data, nil
+}

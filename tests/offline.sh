@@ -91,6 +91,19 @@ if "$MEMPAK" extract pak.mpk 3 bad.note >/dev/null 2>&1; then fail "extract of e
 if "$MEMPAK" extract pak.mpk 16 bad.note >/dev/null 2>&1; then fail "extract of slot 16 should fail"; fi
 pass "extract"
 
+# inspect a note file
+"$MEMPAK" inspect test.note > inspect.txt || fail "inspect failed"
+grep -q "Name:      TEST" inspect.txt || fail "inspect: wrong name"
+grep -q "Game code: NSME (" inspect.txt || fail "inspect: wrong game code or no title"
+grep -q "Publisher: 01" inspect.txt || fail "inspect: wrong publisher"
+grep -q "Size:      2 blocks (512 bytes of data)" inspect.txt || fail "inspect: wrong size"
+grep -q "Header:" inspect.txt && fail "inspect: hex dump shown without -x"
+"$MEMPAK" inspect -x test.note > inspect.txt
+grep -q "^0000: 4e 53 4d 45 30 31 ca fe" inspect.txt || fail "inspect -x: header not dumped"
+grep -q "^01e0: " inspect.txt || fail "inspect -x: data not dumped"
+if "$MEMPAK" inspect blank.mpk >/dev/null 2>&1; then fail "inspect of a non-note file should fail"; fi
+pass "inspect"
+
 # rm
 "$MEMPAK" rm pak.mpk 0 > /dev/null
 "$MEMPAK" ls pak.mpk > ls.txt

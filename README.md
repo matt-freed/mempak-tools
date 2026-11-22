@@ -30,6 +30,7 @@ mempak adapter erase [OPTIONS] [-y] [--fill-ff]           Erase the mempak
 mempak ls [-v] PAKFILE                                    List notes
 mempak rm PAKFILE SLOT                                    Delete a note
 mempak extract PAKFILE SLOT OUTFILE                       Export a note to a note file
+mempak inspect [-x] NOTEFILE                              Show a note file's name, codes and size (-x: hex dump)
 mempak insert [-s N [-o]] PAKFILE NOTEFILE                Import a note file
 mempak format OUTFILE                                     Create an empty image
 mempak repair [-y] PAKFILE                                Repair a damaged image (keeps PAKFILE.bak)
@@ -72,6 +73,7 @@ Note slots are numbered 0–15, as shown by `mempak ls`.
 | Option | Meaning |
 |---|---|
 | `ls -v, --verbose` | Also show each note's game code (its last character is the region) and publisher code, and the game's title when the code is a known retail cartridge. |
+| `inspect -x, --hex` | Also hex dump the note file's 32-byte header and its data. |
 | `insert -s, --slot N` | Write the note to slot N. If the slot already holds a note, you are asked before it is replaced. |
 | `insert -o, --overwrite` | With `-s`, replace an existing note without asking. |
 

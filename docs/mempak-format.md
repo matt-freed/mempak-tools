@@ -472,6 +472,11 @@ A single note is exported in the format used by
 
 Copy the slot's header, replace the inode with `0xCAFE`, then append the data.
 
+### Inspect
+
+`mempak inspect` applies the import checks below and then shows the header
+fields; the header it dumps with `-x` is the file's own, with `CA FE` intact.
+
 ### Import
 
 A note file is accepted only if **all** of these are true:

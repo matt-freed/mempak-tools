@@ -443,3 +443,23 @@ func TestFormatTOC(t *testing.T) {
 		t.Errorf("FreeBlocks = %d, %v; want %d", n, err, TotalBlocks)
 	}
 }
+
+func TestReadNoteFile(t *testing.T) {
+	note := testNote(3, 0)
+	n, data, err := ReadNoteFile(note)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(n.GameCode()) != "NSME" || string(n.Publisher()) != "01" || n.Name() != "TEST" {
+		t.Errorf("got game %q publisher %q name %q", n.GameCode(), n.Publisher(), n.Name())
+	}
+	if n.Blocks != 3 || !bytes.Equal(data, note[noteHeaderSize:]) {
+		t.Errorf("got %d blocks, %d data bytes", n.Blocks, len(data))
+	}
+	if !bytes.Equal(n.Header[:], note[:noteHeaderSize]) {
+		t.Error("header not kept verbatim")
+	}
+	if _, _, err := ReadNoteFile(note[:100]); err == nil {
+		t.Error("partial block accepted")
+	}
+}
