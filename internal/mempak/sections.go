@@ -122,7 +122,8 @@ func (img *Image) blockRuns(t *toc) ([]blockRun, []string) {
 
 	var runs []blockRun
 	for first := blockValidFirst; first <= blockValidLast; {
-		// A note's run may count up or down: inserted notes are linked in
+		// A note's run may count up or down: games and this tool link
+		// blocks in ascending order, but libdragon-based tools link them in
 		// reverse, so their parts are in descending block order.
 		o, last, step := owners[first], first, 0
 		for last < blockValidLast {
@@ -145,7 +146,7 @@ func (img *Image) blockRuns(t *toc) ([]blockRun, []string) {
 	return runs, names
 }
 
-// label describes what a run holds, such as "note 0 'TEST', parts 2-1 of 2".
+// label describes what a run holds, such as "note 0 'TEST', parts 1-2 of 2".
 func (r blockRun) label(names []string) string {
 	switch r.slot {
 	case runFree:

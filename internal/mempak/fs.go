@@ -459,19 +459,28 @@ func (img *Image) InsertNote(header [noteHeaderSize]byte, data []byte, slot int)
 		return 0, err
 	}
 
-	// Take the lowest free blocks, linked in reverse: the last block taken
-	// becomes the note's first block (its inode).
-	inode, taken := blockLast, 0
+	// Take the lowest free blocks and link them in ascending order: the first
+	// block taken is the note's first block (its inode), and each block points
+	// to the next one taken. libdragon and gcn64tools link them in reverse;
+	// both are valid chains. Ascending order matches what games wrote on a
+	// real pak, and makes an image's blocks read in the same order as the
+	// note file's data (see docs/mempak-format.md, "Insert a note").
+	inode, prev, taken := 0, 0, 0
 	for i := blockValidFirst; i <= blockValidLast && taken < nblocks; i++ {
 		if t.next(i) == blockEmpty {
-			t.setNext(i, inode)
-			inode = i
+			if taken == 0 {
+				inode = i
+			} else {
+				t.setNext(prev, i)
+			}
+			prev = i
 			taken++
 		}
 	}
 	if taken < nblocks {
 		return 0, ErrNoSpace
 	}
+	t.setNext(prev, blockLast)
 
 	blocks, err := t.chain(inode)
 	if err != nil {

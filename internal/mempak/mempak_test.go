@@ -204,22 +204,41 @@ func TestInsertExtractDelete(t *testing.T) {
 }
 
 func TestBlockAllocationOrder(t *testing.T) {
-	// The lowest free blocks are taken and linked in reverse, as in
-	// libdragon: a 3-block note on a blank pak uses 7 -> 6 -> 5.
+	chainOf := func(img *Image, slot int) []int {
+		t.Helper()
+		n, _ := img.Note(slot)
+		var tc toc
+		copy(tc[:], img.sector(1))
+		chain, err := tc.chain(n.inode())
+		if err != nil {
+			t.Fatal(err)
+		}
+		return chain
+	}
+
+	// The lowest free blocks are taken and linked in ascending order, as
+	// games do: a 3-block note on a blank pak uses 5 -> 6 -> 7.
 	img := New()
 	insert(t, img, testNote(3, 0), -1)
-	n, _ := img.Note(0)
-	if n.inode() != 7 {
-		t.Fatalf("inode = %d", n.inode())
-	}
-	var tc toc
-	copy(tc[:], img.sector(1))
-	chain, err := tc.chain(n.inode())
-	if err != nil || len(chain) != 3 || chain[1] != 6 || chain[2] != 5 {
-		t.Fatalf("chain = %v, %v", chain, err)
+	if got := chainOf(img, 0); !slices.Equal(got, []int{5, 6, 7}) {
+		t.Fatalf("chain = %v", got)
 	}
 	if !bytes.Equal(img.sector(1), img.sector(2)) {
 		t.Fatal("TOC copies differ")
+	}
+
+	// With the free blocks scattered, the chain still runs upward through
+	// the lowest of them: block 8 is taken, so a 4-block note skips it.
+	insert(t, img, testNote(1, 1), -1) // block 8
+	if err := img.DeleteNote(0); err != nil {
+		t.Fatal(err)
+	}
+	insert(t, img, testNote(4, 2), -1)
+	if got := chainOf(img, 0); !slices.Equal(got, []int{5, 6, 7, 9}) {
+		t.Fatalf("chain around a used block = %v", got)
+	}
+	if out, _ := img.ExportNote(0); !bytes.Equal(out, testNote(4, 2)) {
+		t.Fatal("note data not stored in chain order")
 	}
 }
 
@@ -478,8 +497,7 @@ func TestSections(t *testing.T) {
 		"Sector 1: TOC",
 		"Sector 2: backup TOC",
 		"Sectors 3-4: note table",
-		// Blocks are linked in reverse, so block 5 holds the note's last part.
-		"Blocks 5-6: note 0 'TEST', parts 2-1 of 2",
+		"Blocks 5-6: note 0 'TEST', parts 1-2 of 2",
 		"Block 7: used, but not part of a readable note",
 		"Blocks 8-127: free",
 	}
@@ -654,7 +672,7 @@ func TestFieldsCover(t *testing.T) {
 
 func TestTOCFields(t *testing.T) {
 	img := New()
-	insert(t, img, testNote(3, 0), -1) // blocks 5-7, linked in reverse
+	insert(t, img, testNote(3, 0), -1) // blocks 5-7
 	insert(t, img, testNote(1, 1), -1) // block 8
 
 	values := func(fs []Field) map[string]string {
@@ -667,7 +685,7 @@ func TestTOCFields(t *testing.T) {
 	got := values(img.TOCFields(1))
 	for name, want := range map[string]string{
 		"checksum":     "ok",
-		"blocks 5-7":   "note 0 'TEST', parts 3-1 of 3: 7→6→5, then end",
+		"blocks 5-7":   "note 0 'TEST', parts 1-3 of 3: 5→6→7, then end",
 		"block 8":      "note 1 'TEST', part 1 of 1: 8, then end",
 		"blocks 9-127": "free",
 		"entries 1-4":  "reserved sectors 1-4, not used as pointers",
@@ -680,22 +698,44 @@ func TestTOCFields(t *testing.T) {
 		t.Errorf("identical backup: %+v", b)
 	}
 
-	// A note whose blocks are not next to each other: block 7 now points to
-	// block 9, which ends the note, leaving blocks 5-6 unreachable.
-	img.Data[BlockSize+2*7+1] = 9
-	img.Data[BlockSize+2*9+1] = blockLast
-	var toc1 toc
-	copy(toc1[:], img.sector(1))
-	img.Data[BlockSize+1] = toc1.checksum() // keep the checksum valid
-	got = values(img.TOCFields(1))
-	if v := got["block 7"]; v != "note 0 'TEST', part 1 of 2: 7, then block 9" {
-		t.Errorf("split chain, block 7: %q", v)
+	// setChain relinks slot 0 through blocks, keeping the checksum valid.
+	setChain := func(blocks ...int) {
+		for i, b := range blocks {
+			next := blockLast
+			if i+1 < len(blocks) {
+				next = blocks[i+1]
+			}
+			img.Data[BlockSize+2*b+1] = byte(next)
+		}
+		img.noteHeader(0)[7] = byte(blocks[0])
+		var toc1 toc
+		copy(toc1[:], img.sector(1))
+		img.Data[BlockSize+1] = toc1.checksum()
 	}
-	if v := got["block 9"]; v != "note 0 'TEST', part 2 of 2: 9, then end" {
+
+	// Linked in reverse, as libdragon-based tools do: one run, counting down.
+	setChain(7, 6, 5)
+	got = values(img.TOCFields(1))
+	if v := got["blocks 5-7"]; v != "note 0 'TEST', parts 3-1 of 3: 7→6→5, then end" {
+		t.Errorf("reverse chain: %q", v)
+	}
+
+	// A note whose blocks are not next to each other: block 7 now points to
+	// block 9, which ends the note.
+	setChain(5, 6, 7, 9)
+	got = values(img.TOCFields(1))
+	if v := got["blocks 5-7"]; v != "note 0 'TEST', parts 1-3 of 4: 5→6→7, then block 9" {
+		t.Errorf("split chain, blocks 5-7: %q", v)
+	}
+	if v := got["block 9"]; v != "note 0 'TEST', part 4 of 4: 9, then end" {
 		t.Errorf("split chain, block 9: %q", v)
 	}
-	if v := got["blocks 5-6"]; v != "used, but not part of a readable note" {
-		t.Errorf("split chain, blocks 5-6: %q", v)
+
+	// Block 5 dropped from the chain but still marked used: unreachable.
+	setChain(6, 7, 9)
+	got = values(img.TOCFields(1))
+	if v := got["block 5"]; v != "used, but not part of a readable note" {
+		t.Errorf("unreachable block 5: %q", v)
 	}
 
 	// Lose slot 1's start block: block 8 is used but unreachable, and the
@@ -736,7 +776,7 @@ func TestNoteTableFields(t *testing.T) {
 	if len(got[0].Fields) != 8 || len(got[3].Fields) != 0 {
 		t.Errorf("sub-fields: used %d, free %d", len(got[0].Fields), len(got[3].Fields))
 	}
-	if v := got[0].Fields[2].Value; v != "block 6" { // linked in reverse: blocks 6, 5
+	if v := got[0].Fields[2].Value; v != "block 5" { // blocks 5, 6
 		t.Errorf("start inode: %q", v)
 	}
 	if v := got[2].Fields[2].Value; v != "not a data block: damaged" {
@@ -804,7 +844,7 @@ func TestSectionFieldsCover(t *testing.T) {
 
 func TestNoteSections(t *testing.T) {
 	img := New()
-	insert(t, img, testNote(2, 0), -1) // slot 0: blocks 6, 5
+	insert(t, img, testNote(2, 0), -1) // slot 0: blocks 5, 6
 	insert(t, img, testNote(1, 1), -1) // slot 1: block 7
 	insert(t, img, testNote(1, 2), -1) // slot 2: block 8
 
@@ -823,7 +863,7 @@ func TestNoteSections(t *testing.T) {
 	want := []string{
 		"notes Slot 0: 'TEST', 2 blocks",
 		"toc Sector 1: TOC entries of blocks 5-6",
-		"data Blocks 5-6: note 0 'TEST', parts 2-1 of 2",
+		"data Blocks 5-6: note 0 'TEST', parts 1-2 of 2",
 	}
 	if got := labels(0); !slices.Equal(got, want) {
 		t.Errorf("slot 0:\n got %q\nwant %q", got, want)

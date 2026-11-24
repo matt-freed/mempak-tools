@@ -40,8 +40,7 @@ for t in linux/amd64 windows/amd64 darwin/arm64 freebsd/amd64; do
   - Images of unrecognised size load as raw (`Image.WrongSize()`), so `ls` can
     inspect them, but in-place edits (`rm`, `insert`) and `adapter write` refuse them.
   - Inserted notes keep their raw 32-byte header (only the inode changes). Blocks are
-    allocated lowest-first and linked in reverse; the alternate TOC is written before
-    the valid one.
+    allocated lowest-first and linked in ascending order, as games do (libdragon links them in reverse), to match real paks and so dumps read in note-file order; the alternate TOC is written before the valid one.
   - Note files are bryc's format: header with inode `0xCAFE` + data.
 - **License headers:** files ported from gcn64tools start with
   `// SPDX-License-Identifier: GPL-3.0-or-later` plus the Raphael Assenat / Go port

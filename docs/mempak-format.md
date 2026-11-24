@@ -360,9 +360,10 @@ chain ("part 1 of 5" is the inode), or as free (`0x03` in the TOC). A block the
 TOC marks as used that no readable chain reaches, such as a block of a damaged
 note, is labelled "used, but not part of a readable note". Consecutive blocks
 share one heading when they are free, or when they hold consecutive parts of
-the same note in either direction. Inserted notes are linked in reverse, so
-their runs read like "parts 5-1 of 5". Without a valid TOC, blocks 5–127 are
-shown as one unlabelled section.
+the same note in either direction. Notes written by games, or inserted by this
+tool, read like "parts 1-5 of 5"; notes inserted by libdragon-based tools,
+which link in reverse, read like "parts 5-1 of 5". Without a valid TOC, blocks
+5–127 are shown as one unlabelled section.
 
 `mempak inspect pak -f PAKFILE notes` shows the note table one slot at a time.
 A free slot (zero game or publisher code) is a single field labelled "free",
@@ -458,17 +459,34 @@ either a target slot or "first free slot".
    header, which leaves a damaged note's blocks allocated until `repair` frees
    them.
 5. **Allocate** by scanning blocks from `0x05` up, taking the lowest free blocks
-   and **linking them in reverse**:
+   and **linking them in ascending order**:
    ```
-   inode = 0x01
+   inode = none
    for i in 0x05..0x7F while taken < n:
        if toc[i] == 0x03:
-           toc[i] = inode
-           inode = i
+           if inode == none: inode = i
+           else: toc[prev] = i
+           prev = i
+   toc[prev] = 0x01
    ```
-   The **highest** block taken becomes the start inode, and the chain runs
-   downward to the lowest block, which holds `0x01`. For example, three free
-   blocks 5, 6, 7 give the chain `7 → 6 → 5 → end`.
+   The **lowest** block taken becomes the start inode, and the chain runs
+   upward to the highest block, which holds `0x01`. For example, three free
+   blocks 5, 6, 7 give the chain `5 → 6 → 7 → end`.
+
+   libdragon links the same blocks in reverse
+   (`7 → 6 → 5 → end`), and this tool used to do the same. Games read either
+   order, since they follow the chain wherever it goes, and note files are the
+   same either way, since they hold the data in chain order. Ascending order
+   was chosen for two reasons:
+
+   - **It matches what games write.** On a pak written by games on real
+     hardware, every note is linked in ascending order, including
+     one whose chain jumps over another note's blocks (`74 → … → 77 → 86`).
+   - **It makes dumps read in order.** `inspect pak` shows blocks by block
+     number, so an ascending note's blocks read top to bottom in the same
+     order as its note file's data, byte for byte, and are labelled
+     "parts 1-N". A reverse-linked note reads back to front, one block at a
+     time.
 6. Copy the data to the blocks in chain order.
 7. Write the TOC (alternate first).
 8. Write the header **as given**, except bytes `0x06`–`0x07`, which become the
