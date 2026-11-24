@@ -114,7 +114,7 @@ as found on official paks, has `0xFF` in all three (`ff ff 01 ff` at
 from that template, has `00 01 01 00` there: both unused bytes `0x00` and
 device ID `0x01`. Nothing is known to read the unused bytes or the device ID's
 other bits, and **this tool** neither checks them nor treats either value as
-damage: `inspect pak … id` shows them as they are.
+damage.
 
 Nintendo's library reads the **serial number** when the pak is initialised
 and compares it on every access. If it has changed, the call returns
@@ -136,19 +136,6 @@ reported as not formatted or corrupted. Nothing else in sector 0 is checked.
 Copies that fail their checksums, or differ from the copy in use, are reported
 as damaged, but the pak reads normally. `adapter read` prints a warning naming
 them, and `ls` lists them among the repairs it recommends (section 6). `repair` rewrites them from the copy in use (section 6).
-
-`mempak inspect pak -f PAKFILE id` shows sector 0 field by field, each field
-followed by its bytes, so the dump is split at the field boundaries above and
-covers all 256 bytes of the sector. Next to each field is only what its bytes
-mean: whether a checksum is right (and if not, what it should be), what the
-device ID's bit 0 says, and the bank count as a size. Fields with no known
-meaning, such as the label, the serial number and the unused bytes, have
-nothing there; their bytes are the whole story. The copy in use, and any copy
-that fails its checksums or differs from it, is broken into the fields above;
-a copy identical to the one in use is one field, with its 32 bytes under it.
-The ID sector has the same layout on multi-bank paks, so `inspect pak … id`
-works on them too, with a warning.
-
 
 ### Format template
 
@@ -243,24 +230,6 @@ one that was valid, so at least one valid TOC exists at every step.
 Free space is the number of entries `5..127` whose value is `0x03`. The maximum
 is 123.
 
-### Inspecting the TOC
-
-`mempak inspect pak -f PAKFILE toc` shows each TOC copy field by field, each
-field followed by its bytes:
-
-- byte 0 (unused) and the checksum, which is "ok" or says what it should be;
-- entries 1–4 together, as the reserved sectors;
-- entries 5–127, grouped into the same runs as the data blocks (section 5,
-  "Following the block chain"), with the run's chain in chain order and where
-  it goes next, such as `12→13→…→73, then end` or `74→75→76→77, then block 86`.
-  Free runs are labelled "free". A run that no readable note reaches has each
-  entry decoded on its own: "next block N", "last block of a note" or
-  "invalid". Entries whose high byte is not `0` are pointed out.
-
-Each copy is decoded from its own entries, so a stale or damaged backup shows
-its own chains. A copy identical to the one in use is a single field, with its
-256 bytes under it.
-
 ## 4. Sectors 3–4: note table
 
 The note table is the pak's directory. Each entry names a note, says which
@@ -349,27 +318,6 @@ A used slot is one of two things:
   overwritten. `repair` (section 6) removes damaged notes and frees their
   blocks.
 
-### Inspecting the note table
-
-`mempak inspect pak -f PAKFILE notes` shows the note table one slot at a time.
-A free slot (zero game or publisher code) is a single field labelled "free",
-with its 32 bytes under it. A used slot is labelled with its name and size, or
-"damaged: broken block chain", and split into the fields of the table above:
-the game code with the game's title when known, the publisher code, the start
-inode as a block number (or "not a data block: damaged"), the status and
-unused bytes (shown only as bytes), the extension character and the name.
-GameShark's non-ASCII codes are labelled "Datel GameShark". The data blocks
-themselves are always shown as plain hex, since their layout is up to each
-game.
-
-`mempak inspect pak -s N PAKFILE` shows only what belongs to the note in slot
-N: its note-table entry, its entries in the TOC in use (grouped into runs, as in
-section 3), and its data blocks. The other TOC copy is compared at the same
-blocks; where its bytes differ, its entries there are shown too, each decoded
-on its own, since its chain may not hold. A damaged note, or any note in an
-image without a valid TOC, shows only its note-table entry, since its blocks
-can't be found.
-
 ### Name display
 
 **This tool** displays a name as the 16 name bytes followed by `.` and the
@@ -397,11 +345,6 @@ and ␠ is a space. Codes `0x01`–`0x0E` and `0x95`–`0xFF` are undefined.
 
 The Unicode characters used for display are U+0027 for `0x37`, and U+309B
 (dakuten) and U+309C (handakuten) for `0x43` and `0x44`.
-
-> **Difference from gcn64tools.** The C gcn64tools table shows a backtick for
-> `0x37`, and U+212B `Å` and U+212C `ℬ` for `0x43` and `0x44` (apparently a
-> typo for U+309B and U+309C). Only the display differs; the name bytes stored
-> on the pak are the same.
 
 ## 5. Sectors 5–127: note data
 
@@ -431,20 +374,6 @@ loop:
 
 The note's data is its blocks' sectors joined in chain order. Its size is
 always `len(blocks) × 256`.
-
-### Inspecting the data
-
-`mempak inspect pak` uses the chains to label the data blocks. Each
-block is labelled with the note it belongs to and its position in that note's
-chain ("part 1 of 5" is the inode), or as free (`0x03` in the TOC). A block the
-TOC marks as used that no readable chain reaches, such as a block of a damaged
-note, is labelled "used, but not part of a readable note". Consecutive blocks
-share one heading when they are free, or when they hold consecutive parts of
-the same note in either direction. Notes written by games, or inserted by this
-tool, read like "parts 1-5 of 5"; notes inserted by libdragon-based tools,
-which link in reverse, read like "parts 5-1 of 5". Without a valid TOC, blocks
-5–127 are shown as one unlabelled section. The block contents are always shown
-as plain hex.
 
 ## 6. Filesystem operations
 
@@ -511,10 +440,9 @@ either a target slot or "first free slot".
    - **It matches what games write.** On a pak written by games on real
      hardware, every note is linked in ascending order, including
      one whose chain jumps over another note's blocks (`74 → … → 77 → 86`).
-   - **It makes dumps read in order.** `inspect pak` shows blocks by block
-     number, so an ascending note's blocks read top to bottom in the same
-     order as its note file's data, byte for byte, and are labelled
-     "parts 1-N". A reverse-linked note reads back to front, one block at a
+   - **It keeps the data in order.** Read by block number, an ascending
+     note's blocks hold its data in the same order as its note file, byte for
+     byte. A reverse-linked note's blocks read back to front, one block at a
      time.
 6. Copy the data to the blocks in chain order.
 7. Write the TOC (alternate first).
@@ -589,15 +517,6 @@ A single note is exported in the format used by
 ### Export
 
 Copy the slot's header, replace the inode with `0xCAFE`, then append the data.
-
-### Inspect
-
-`mempak inspect note` applies the import checks below, shows the main header
-fields, and then hex dumps the header and the data. With `-f`, the header is
-shown field by field instead, using the note-table layout in section 4, each
-field followed by its bytes. The header is the file's own, so the start inode
-shows the `CA FE` marker. The data is always one dump, with offsets from the
-start of the data.
 
 ### Import
 
