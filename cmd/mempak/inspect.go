@@ -117,10 +117,13 @@ func newInspectPakCmd() *cobra.Command {
 			// shows its summary first. With one section the layout would
 			// only repeat the headings below, so it is left out.
 			if only == "" {
-				fmt.Fprintln(stdout)
+				// The Section column is the SECTION argument that shows
+				// just that part.
+				fmt.Fprintf(stdout, "\n%-13s  %-7s  %s\n", "Offsets", "Section", "Contents")
 				for _, s := range sections {
-					fmt.Fprintln(stdout, heading(s))
+					fmt.Fprintf(stdout, "0x%04x-0x%04x  %-7s  %s\n", s.Offset, s.Offset+len(s.Data)-1, s.Kind, s.Label)
 				}
+				fmt.Fprintf(stdout, "\nTo show one section: mempak inspect pak %s SECTION [-f]\n", a[0])
 			}
 			for _, s := range sections {
 				fmt.Fprintf(stdout, "\n%s:\n", heading(s))

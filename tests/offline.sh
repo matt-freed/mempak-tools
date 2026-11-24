@@ -75,10 +75,13 @@ pass "ls -v"
 
 # inspect pak: the layout, then a hex dump of each section
 "$MEMPAK" inspect pak pak.mpk > inspect.txt || fail "inspect pak failed"
-grep -q "^0x0000-0x00ff  Sector 0: ID sector$" inspect.txt || fail "inspect pak: ID sector missing"
-grep -q "^0x0300-0x04ff  Sectors 3-4: note table$" inspect.txt || fail "inspect pak: note table missing"
-grep -q "^0x0500-0x06ff  Blocks 5-6: note 0 'TEST', parts 2-1 of 2$" inspect.txt || fail "inspect pak: note blocks missing"
-grep -q "^0x0700-0x7fff  Blocks 7-127: free$" inspect.txt || fail "inspect pak: free blocks missing"
+grep -q "^0x0000-0x00ff  id       Sector 0: ID sector$" inspect.txt || fail "inspect pak: ID sector missing"
+grep -q "^0x0300-0x04ff  notes    Sectors 3-4: note table$" inspect.txt || fail "inspect pak: note table missing"
+grep -q "^0x0500-0x06ff  data     Blocks 5-6: note 0 'TEST', parts 2-1 of 2$" inspect.txt || fail "inspect pak: note blocks missing"
+grep -q "^0x0700-0x7fff  data     Blocks 7-127: free$" inspect.txt || fail "inspect pak: free blocks missing"
+grep -q "^Offsets        Section  Contents$" inspect.txt || fail "inspect pak: layout header missing"
+grep -q "^To show one section: mempak inspect pak pak.mpk SECTION \[-f\]$" inspect.txt || fail "inspect pak: section hint missing"
+grep -q "^0x0100-0x01ff  toc      Sector 1: TOC$" inspect.txt || fail "inspect pak: TOC should be labelled with its section"
 grep -q "^0x0500-0x06ff  Blocks 5-6: note 0 'TEST', parts 2-1 of 2:$" inspect.txt || fail "inspect pak: section dump heading missing"
 [ "$(grep -n -m1 '^0000: ' inspect.txt | cut -d: -f1)" -gt "$(grep -n -m1 'Blocks 7-127: free$' inspect.txt | cut -d: -f1)" ] || fail "inspect pak: hex dump should follow the layout"
 grep -q "^0020: " inspect.txt || fail "inspect pak: sector 0 should be dumped as one block"
@@ -124,7 +127,8 @@ grep -q "^0x0200-0x02ff  Sector 2: backup TOC:$" inspect.txt || fail "inspect pa
 "$MEMPAK" inspect pak pak.mpk data > inspect.txt
 grep -q "Sector" inspect.txt && fail "inspect pak data: should show only data blocks"
 grep -q "^0x0700-0x7fff  Blocks 7-127: free:$" inspect.txt || fail "inspect pak data: free blocks missing"
-grep -q "^0x0700-0x7fff  Blocks 7-127: free$" inspect.txt && fail "inspect pak data: layout should be left out"
+grep -q "^0x0700-0x7fff  data" inspect.txt && fail "inspect pak data: layout should be left out"
+grep -q "To show one section" inspect.txt && fail "inspect pak data: section hint should be left out"
 cp pak.mpk id.mpk
 printf '\x00' | dd of=id.mpk bs=1 seek=$((0x9c)) conv=notrunc 2>/dev/null  # break backup 2's checksum
 "$MEMPAK" inspect pak -f id.mpk id > inspect.txt 2>/dev/null
