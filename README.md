@@ -30,8 +30,8 @@ mempak adapter erase [OPTIONS] [-y] [--fill-ff]           Erase the mempak
 mempak ls [-v] PAKFILE                                    List notes
 mempak rm PAKFILE SLOT                                    Delete a note
 mempak extract PAKFILE SLOT OUTFILE                       Export a note to a note file
-mempak inspect pak [-x] PAKFILE [SECTION]                 Show an image's layout, or one section field by field (-x: bytes)
-mempak inspect note [-x] NOTEFILE                         Show a note file's name, codes and size (-x: header fields and bytes)
+mempak inspect pak [-f] PAKFILE [SECTION]                 Show an image's layout, then hex dump it by section
+mempak inspect note [-f] NOTEFILE                         Show a note file's name, codes and size, then hex dump it
 mempak insert [-s N [-o]] PAKFILE NOTEFILE                Import a note file
 mempak format OUTFILE                                     Create an empty image
 mempak repair [-y] PAKFILE                                Repair a damaged image (keeps PAKFILE.bak)
@@ -74,9 +74,10 @@ Note slots are numbered 0–15, as shown by `mempak ls`.
 | Option | Meaning |
 |---|---|
 | `ls -v, --verbose` | Also show each note's game code (its last character is the region) and publisher code, and the game's title when the code is a known retail cartridge. |
-| `inspect pak -x, --hex` | Also show the bytes behind each line. After the list of sections, hex dump each one; with a SECTION, show each field's bytes under it. The list is what `inspect pak` shows without `-x`: the ID sector, the two TOCs, the note table and the data blocks, each run of blocks labelled with the note (and which of its parts) it holds, or as free. Offsets are from the start of the image. |
-| `inspect pak PAKFILE SECTION` | Show one section field by field instead of the layout. So far the only section is `id`: sector 0's label and the four ID block copies, with the copy in use and any damaged or different copy broken into its fields (serial number, device ID, bank count, checksums). Long values such as the label and serial number are shortened to their first 8 bytes; `-x` shows them in full. |
-| `inspect note -x, --hex` | Also show the note file's 32-byte header field by field (game code, publisher, start inode, status, extension, name), each field followed by its bytes, then hex dump the data. |
+| `inspect pak PAKFILE` | Show the image's layout (the ID sector, the two TOCs, the note table and the data blocks, each run of blocks labelled with the note and which of its parts it holds, or as free), then hex dump each section. Offsets are from the start of the image. The output is long, but the layout comes first, so `\| head -20` shows just that. |
+| `inspect pak -f, --fields` | Split each section into its fields, each followed by its bytes and labelled with what those bytes mean, where that is known (a checksum is "ok" or says what it should be; a field with no known meaning, such as the serial number, has no label). The ID sector, both TOCs (each run of entries with its chain, such as `12→13→…→73, then end`) and the note table (each used slot split into game code, publisher, start inode and so on) are decoded; the data blocks, whose layout is up to each game, are still dumped whole. |
+| `inspect pak PAKFILE SECTION` | Show only one section, without the layout: `id` (sector 0), `toc` (the TOC and its backup), `notes` (the note table) or `data` (the data blocks). Works with or without `-f`. |
+| `inspect note -f, --fields` | Show the note file's 32-byte header field by field (game code, publisher, start inode, status, extension, name), each followed by its bytes and labelled with what they mean where that is known, instead of as one dump. |
 | `insert -s, --slot N` | Write the note to slot N. If the slot already holds a note, you are asked before it is replaced. |
 | `insert -o, --overwrite` | With `-s`, replace an existing note without asking. |
 

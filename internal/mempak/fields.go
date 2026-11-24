@@ -5,6 +5,7 @@ package mempak
 import (
 	"bytes"
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -15,34 +16,13 @@ type Field struct {
 	Offset int    // offset of Data in the image or file
 	Data   []byte // the field's bytes
 	Name   string
-	Value  string // the decoded value, or a summary of the sub-fields
+	Value  string // what the bytes mean, or "" when nothing is known
 	Fields []Field
 }
 
 // field returns the Field for the size bytes of b at offset off.
 func field(b []byte, off, size int, name, value string, sub ...Field) Field {
 	return Field{Offset: off, Data: b[off : off+size], Name: name, Value: value, Fields: sub}
-}
-
-// bytesValue summarises a run of bytes with no known meaning: "all 0xNN" when
-// every byte is the same, else the bytes in hex, cut short after 8 bytes when
-// there are more than 16.
-func bytesValue(b []byte) string {
-	if len(b) > 1 && bytes.Count(b, b[:1]) == len(b) {
-		return fmt.Sprintf("all 0x%02x", b[0])
-	}
-	if len(b) > 16 {
-		return hexBytes(b[:8]) + " …"
-	}
-	return hexBytes(b)
-}
-
-func hexBytes(b []byte) string {
-	s := make([]string, len(b))
-	for i, c := range b {
-		s[i] = fmt.Sprintf("%02x", c)
-	}
-	return strings.Join(s, " ")
 }
 
 // CodeString formats a game or publisher code: as text if every byte is
@@ -69,7 +49,7 @@ func (img *Image) IDSectorFields() []Field {
 	if err == nil {
 		ref = h[idBlockOffsets[inUse] : idBlockOffsets[inUse]+idBlockSize]
 	}
-	out := []Field{field(d, 0, idBlockSize, "label", bytesValue(h[:idBlockSize]))}
+	out := []Field{field(d, 0, idBlockSize, "label", "")}
 	for off := idBlockSize; off < BlockSize; off += idBlockSize {
 		b := h[off : off+idBlockSize]
 		copyNum := -1
@@ -79,7 +59,7 @@ func (img *Image) IDSectorFields() []Field {
 			}
 		}
 		if copyNum < 0 {
-			out = append(out, field(d, off, idBlockSize, "unused", bytesValue(b)))
+			out = append(out, field(d, off, idBlockSize, "unused", ""))
 			continue
 		}
 		name := "ID block (primary)"
@@ -116,30 +96,28 @@ func idBlockFields(d []byte, off int) []Field {
 		bankValue += "; multi-bank paks are not supported by this tool"
 	}
 
-	dev := b[0x19]
-	devValue := fmt.Sprintf("0x%02x (bit 0 set: controller pak)", dev)
-	if dev&1 == 0 {
-		devValue = fmt.Sprintf("0x%02x (bit 0 clear: not a controller pak)", dev)
+	devValue := "controller pak (bit 0 set)"
+	if b[0x19]&1 == 0 {
+		devValue = "not a controller pak (bit 0 clear)"
 	}
 
-	sum := idBlockSum(b)
 	c1 := uint16(b[0x1C])<<8 | uint16(b[0x1D])
 	c2 := uint16(b[0x1E])<<8 | uint16(b[0x1F])
-	c1Value := fmt.Sprintf("0x%04x (ok)", c1)
-	if c1 != sum {
-		c1Value = fmt.Sprintf("0x%04x (bad: the words at 0x00-0x1b sum to 0x%04x)", c1, sum)
+	c1Value := "ok"
+	if sum := idBlockSum(b); c1 != sum {
+		c1Value = fmt.Sprintf("bad: should be 0x%04x, the sum of the words at 0x00-0x1b", sum)
 	}
-	c2Value := fmt.Sprintf("0x%04x (ok)", c2)
+	c2Value := "ok"
 	if want := 0xFFF2 - c1; c2 != want {
-		c2Value = fmt.Sprintf("0x%04x (bad: 0xfff2 - checksum 1 is 0x%04x)", c2, want)
+		c2Value = fmt.Sprintf("bad: should be 0x%04x, 0xfff2 - checksum 1", want)
 	}
 
 	return []Field{
-		field(d, off, 0x18, "serial number", bytesValue(b[:0x18])),
-		field(d, off+0x18, 1, "unused", fmt.Sprintf("0x%02x", b[0x18])),
+		field(d, off, 0x18, "serial number", ""),
+		field(d, off+0x18, 1, "unused", ""),
 		field(d, off+0x19, 1, "device ID", devValue),
 		field(d, off+0x1A, 1, "bank count", bankValue),
-		field(d, off+0x1B, 1, "unused", fmt.Sprintf("0x%02x", b[0x1B])),
+		field(d, off+0x1B, 1, "unused", ""),
 		field(d, off+0x1C, 2, "checksum 1", c1Value),
 		field(d, off+0x1E, 2, "checksum 2", c2Value),
 	}
@@ -151,25 +129,25 @@ func idBlockFields(d []byte, off int) []Field {
 func noteHeaderFields(d []byte, off int, noteFile bool) []Field {
 	h := d[off : off+noteHeaderSize]
 
-	game := CodeString(h[0:4])
+	game := codeValue(h[0:4], 0x3BADD1E5)
 	if name, ok := GameName(h[0:4]); ok {
 		game += " (" + name + ")"
 	}
 
 	inode := int(h[6])<<8 | int(h[7])
-	inodeValue := fmt.Sprintf("0x%04x (block %d)", inode, inode)
+	inodeValue := fmt.Sprintf("block %d", inode)
 	switch {
 	case noteFile && inode == noteFileMarker:
-		inodeValue = "0xcafe (note file marker; set when the note is inserted)"
+		inodeValue = "note file marker (set to a block when the note is inserted)"
 	case noteFile:
-		inodeValue = fmt.Sprintf("0x%04x (not the 0xcafe note file marker)", inode)
+		inodeValue = "not the 0xcafe note file marker"
 	case inode < blockValidFirst || inode > blockValidLast:
-		inodeValue = fmt.Sprintf("0x%04x (not a data block: damaged)", inode)
+		inodeValue = "not a data block: damaged"
 	}
 
-	ext := fmt.Sprintf("none (%s)", hexBytes(h[0x0C:0x10]))
+	ext := "none"
 	if h[0x0C] != 0 {
-		ext = fmt.Sprintf("'%c' (%s)", decodeChar(h[0x0C]), hexBytes(h[0x0C:0x10]))
+		ext = fmt.Sprintf("'%c'", decodeChar(h[0x0C]))
 	}
 
 	var name strings.Builder
@@ -179,17 +157,152 @@ func noteHeaderFields(d []byte, off int, noteFile bool) []Field {
 
 	return []Field{
 		field(d, off, 4, "game code", game),
-		field(d, off+0x04, 2, "publisher code", CodeString(h[4:6])),
+		field(d, off+0x04, 2, "publisher code", codeValue(h[4:6], 0xFADE)),
 		field(d, off+0x06, 2, "start inode", inodeValue),
-		field(d, off+0x08, 1, "status", fmt.Sprintf("0x%02x", h[0x08])),
-		field(d, off+0x09, 1, "unused", fmt.Sprintf("0x%02x", h[0x09])),
-		field(d, off+0x0A, 2, "unused", bytesValue(h[0x0A:0x0C])),
+		field(d, off+0x08, 1, "status", ""), // its bits' meaning is not known
+		field(d, off+0x09, 1, "unused", ""),
+		field(d, off+0x0A, 2, "unused", ""),
 		field(d, off+0x0C, 4, "extension", ext),
 		field(d, off+0x10, 16, "name", fmt.Sprintf("\"%s\"", strings.TrimRight(name.String(), " "))),
 	}
 }
 
+// codeValue says what a game or publisher code means: its text when it is
+// ASCII, Datel's GameShark for its known non-ASCII code (gameShark), and
+// nothing otherwise.
+func codeValue(b []byte, gameShark uint32) string {
+	var v uint32
+	for _, c := range b {
+		v = v<<8 | uint32(c)
+	}
+	switch {
+	case v == gameShark:
+		return "Datel GameShark"
+	case CodeString(b) == string(b):
+		return string(b)
+	}
+	return ""
+}
+
 // NoteFileHeaderFields decodes the 32-byte header of a note file.
 func NoteFileHeaderFields(b []byte) []Field {
 	return noteHeaderFields(b, 0, true)
+}
+
+// TOCFields decodes one TOC copy, in sector 1 or 2. A copy identical to the
+// one in use is a single field. Otherwise the copy is split into its first
+// entry (an unused byte and the checksum), the reserved entries 1-4, and the
+// entries of blocks 5-127, grouped into the same runs as Sections but
+// following this copy's own chains, since a damaged copy may differ.
+func (img *Image) TOCFields(sector int) []Field {
+	d := img.Data[:]
+	off := sector * BlockSize
+	var t toc
+	copy(t[:], img.sector(sector))
+	if inUse, err := img.validTOC(); err == nil && inUse != sector && bytes.Equal(img.sector(inUse), t[:]) {
+		return []Field{field(d, off, BlockSize, "TOC", fmt.Sprintf("identical to the copy in use (sector %d)", inUse))}
+	}
+
+	checksum := "ok"
+	if sum := t.checksum(); sum != t[1] {
+		checksum = fmt.Sprintf("bad: should be 0x%02x, the sum of entries 5-127", sum)
+	}
+	out := []Field{
+		field(d, off, 1, "unused", ""),
+		field(d, off+1, 1, "checksum", checksum),
+		field(d, off+2, 2*(blockValidFirst-1), "entries 1-4", "reserved sectors 1-4, not used as pointers"),
+	}
+	runs, names := img.blockRuns(&t)
+	for _, r := range runs {
+		name := fmt.Sprintf("blocks %d-%d", r.first, r.last)
+		if r.first == r.last {
+			name = fmt.Sprintf("block %d", r.first)
+		}
+		f := field(d, off+2*r.first, 2*(r.last-r.first+1), name, r.label(names))
+		switch r.slot {
+		case runFree:
+		case runOrphan:
+			// No chain to follow, so say where each entry points.
+			for b := r.first; b <= r.last; b++ {
+				f.Fields = append(f.Fields, field(d, off+2*b, 2, fmt.Sprintf("block %d", b), entryValue(t.next(b))))
+			}
+		default:
+			f.Value += ": " + r.chain(&t)
+		}
+		for b := r.first; b <= r.last; b++ {
+			if t[2*b] != 0 {
+				f.Value += "; some high bytes are not 0 (ignored)"
+				break
+			}
+		}
+		out = append(out, f)
+	}
+	return out
+}
+
+// entryValue says what a TOC entry's next-block value means.
+func entryValue(next int) string {
+	switch {
+	case next == blockLast:
+		return "last block of a note"
+	case next == blockEmpty:
+		return "free"
+	case next >= blockValidFirst && next <= blockValidLast:
+		return fmt.Sprintf("next block %d", next)
+	}
+	return "invalid"
+}
+
+// chain shows how a note's run is linked, in chain order, and where the
+// chain goes after it, such as "12→13→…→73, then end".
+func (r blockRun) chain(t *toc) string {
+	var blocks []int
+	for b := r.first; b <= r.last; b++ {
+		blocks = append(blocks, b)
+	}
+	if r.lastPart < r.firstPart {
+		slices.Reverse(blocks)
+	}
+	s := make([]string, len(blocks))
+	for i, b := range blocks {
+		s[i] = fmt.Sprint(b)
+	}
+	if len(s) > 4 {
+		s = []string{s[0], s[1], "…", s[len(s)-1]}
+	}
+	then := "end"
+	if next := t.next(blocks[len(blocks)-1]); next != blockLast {
+		then = fmt.Sprintf("block %d", next)
+	}
+	return strings.Join(s, "→") + ", then " + then
+}
+
+// NoteTableFields decodes the 16 entries of the note table. A used slot is
+// split into its fields; a free one (zero game or publisher code) is one
+// field.
+func (img *Image) NoteTableFields() []Field {
+	d := img.Data[:]
+	t, _, tocErr := img.readTOC()
+	var out []Field
+	for slot := range NumNotes {
+		off := noteTableOffset + slot*noteHeaderSize
+		name := fmt.Sprintf("slot %d", slot)
+		if !slotUsed(d[off : off+noteHeaderSize]) {
+			out = append(out, field(d, off, noteHeaderSize, name, "free"))
+			continue
+		}
+		var value string
+		switch n := img.note(&t, slot); {
+		case tocErr != nil:
+			value = fmt.Sprintf("'%s' (no valid TOC, so its blocks are unknown)", n.Name())
+		case !n.Valid:
+			value = fmt.Sprintf("'%s', damaged: broken block chain", n.Name())
+		case n.Blocks == 1:
+			value = fmt.Sprintf("'%s', 1 block", n.Name())
+		default:
+			value = fmt.Sprintf("'%s', %d blocks", n.Name(), n.Blocks)
+		}
+		out = append(out, field(d, off, noteHeaderSize, name, value, noteHeaderFields(d, off, false)...))
+	}
+	return out
 }

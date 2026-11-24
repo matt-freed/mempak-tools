@@ -73,19 +73,19 @@ grep -q "Note  0: TEST .*  game NSME  publisher 01  Super Mario 64 (USA)$" ls.tx
 	fail "ls -v: note 0 should show codes and title"
 pass "ls -v"
 
-# inspect pak shows the layout; -x adds a hex dump of each section
+# inspect pak: the layout, then a hex dump of each section
 "$MEMPAK" inspect pak pak.mpk > inspect.txt || fail "inspect pak failed"
 grep -q "^0x0000-0x00ff  Sector 0: ID sector$" inspect.txt || fail "inspect pak: ID sector missing"
 grep -q "^0x0300-0x04ff  Sectors 3-4: note table$" inspect.txt || fail "inspect pak: note table missing"
 grep -q "^0x0500-0x06ff  Blocks 5-6: note 0 'TEST', parts 2-1 of 2$" inspect.txt || fail "inspect pak: note blocks missing"
 grep -q "^0x0700-0x7fff  Blocks 7-127: free$" inspect.txt || fail "inspect pak: free blocks missing"
-grep -q "^0000: " inspect.txt && fail "inspect pak: hex dump shown without -x"
-"$MEMPAK" inspect pak -x pak.mpk > inspect.txt
-grep -q "^0x0500-0x06ff  Blocks 5-6: note 0 'TEST', parts 2-1 of 2:$" inspect.txt || fail "inspect pak -x: heading missing"
-grep -q "^0x0500-0x06ff  Blocks 5-6: note 0 'TEST', parts 2-1 of 2$" inspect.txt || fail "inspect pak -x: layout list should come first"
-[ "$(grep -n -m1 '^0000: ' inspect.txt | cut -d: -f1)" -gt "$(grep -n -m1 'Blocks 7-127: free$' inspect.txt | cut -d: -f1)" ] || fail "inspect pak -x: hex dump should follow the layout list"
-grep -q "^7fe0: " inspect.txt || fail "inspect pak -x: dump should reach the end of the image"
+grep -q "^0x0500-0x06ff  Blocks 5-6: note 0 'TEST', parts 2-1 of 2:$" inspect.txt || fail "inspect pak: section dump heading missing"
+[ "$(grep -n -m1 '^0000: ' inspect.txt | cut -d: -f1)" -gt "$(grep -n -m1 'Blocks 7-127: free$' inspect.txt | cut -d: -f1)" ] || fail "inspect pak: hex dump should follow the layout"
+grep -q "^0020: " inspect.txt || fail "inspect pak: sector 0 should be dumped as one block"
+grep -q "^7fe0: " inspect.txt || fail "inspect pak: dump should reach the end of the image"
+grep -q "ID block (primary)" inspect.txt && fail "inspect pak: fields shown without -f"
 "$MEMPAK" ls -x pak.mpk >/dev/null 2>&1 && fail "ls -x was removed and should fail"
+"$MEMPAK" inspect pak -x pak.mpk >/dev/null 2>&1 && fail "inspect pak -x was replaced and should fail"
 head -c 32768 /dev/zero | LC_ALL=C tr '\0' '\377' > ff.mpk
 [ "$(wc -c < ff.mpk | tr -d " ")" = 32768 ] || fail "fixture ff.mpk has wrong size"
 if "$MEMPAK" inspect pak ff.mpk > inspect.txt; then fail "inspect pak: unformatted image should fail"; fi
@@ -94,27 +94,56 @@ rc=0; "$MEMPAK" inspect >/dev/null 2>&1 || rc=$?
 [ "$rc" = 2 ] || fail "inspect without a subcommand should be a usage error (exit 2), got $rc"
 pass "inspect pak"
 
-# inspect pak SECTION: the ID sector field by field
+# inspect pak -f: fields with their bytes; sections without fields stay one dump
+"$MEMPAK" inspect pak -f pak.mpk > inspect.txt || fail "inspect pak -f failed"
+grep -q "^  0x0020  32  ID block (primary)   in use$" inspect.txt || fail "inspect pak -f: primary should be in use"
+grep -q "^    0x003a   1  bank count         1 (32 KiB)$" inspect.txt || fail "inspect pak -f: bank count missing"
+grep -A1 "^    0x003c   2  checksum 1         ok$" inspect.txt | grep -q "^                003c: 66 25 " || fail "inspect pak -f: checksum 1 bytes should follow the field"
+grep -A1 "^  0x0060  32  ID block (backup 1)  identical to the copy in use$" inspect.txt | grep -q "^              0060: ff ff ff ff " || fail "inspect pak -f: a one-line copy should show its 32 bytes"
+grep -q "^0020: " inspect.txt && fail "inspect pak -f: sector 0 should be split by field"
+grep -q "^0100: " inspect.txt && fail "inspect pak -f: the TOC should be split by field"
+grep -Eq "^  0x0101 +1 +checksum +ok$" inspect.txt || fail "inspect pak -f: TOC checksum missing"
+grep -Eq "^  0x010a +4 +blocks 5-6 +note 0 'TEST', parts 2-1 of 2: 6→5, then end$" inspect.txt || fail "inspect pak -f: TOC chain missing"
+grep -Eq "^  0x0200 256 +TOC +identical to the copy in use \(sector 1\)$" inspect.txt || fail "inspect pak -f: identical backup TOC should be one field"
+grep -Eq "^  0x0300 +32 +slot 0 +'TEST', 2 blocks$" inspect.txt || fail "inspect pak -f: note table slot 0 missing"
+grep -Eq "^    0x0306 +2 +start inode +block 6$" inspect.txt || fail "inspect pak -f: slot 0 start inode missing"
+grep -Eq "^  0x0320 +32 +slot 1 +free$" inspect.txt || fail "inspect pak -f: free slot missing"
+grep -q "^7fe0: " inspect.txt || fail "inspect pak -f: data blocks should still be dumped"
+grep -Eq "^    0x0020 +24 +serial number$" inspect.txt || fail "inspect pak -f: a field with no known meaning should have no value"
+pass "inspect pak -f"
+
+# inspect pak SECTION: only that section, with or without -f
 "$MEMPAK" inspect pak pak.mpk id > inspect.txt || fail "inspect pak id failed"
-grep -q "^  0x0020  32  ID block (primary)   in use$" inspect.txt || fail "inspect pak id: primary should be in use"
-grep -q "^    0x003a   1  bank count         1 (32 KiB)$" inspect.txt || fail "inspect pak id: bank count missing"
-grep -q "^    0x003c   2  checksum 1         0x6625 (ok)$" inspect.txt || fail "inspect pak id: checksum 1 missing"
-grep -q "^  0x0060  32  ID block (backup 1)  identical to the copy in use$" inspect.txt || fail "inspect pak id: backup 1 should match"
-grep -q "Blocks 5-6" inspect.txt && fail "inspect pak id: should show only sector 0"
-grep -q "^0000: " inspect.txt && fail "inspect pak id: hex dump shown without -x"
-"$MEMPAK" inspect pak -x pak.mpk id > inspect.txt
-grep -A1 "^    0x003c   2  checksum 1" inspect.txt | grep -q "^                003c: 66 25 " || fail "inspect pak id -x: checksum 1 bytes should follow the field"
-grep -A1 "ID block (backup 1)" inspect.txt | grep -q "^              0060: ff ff ff ff " || fail "inspect pak id -x: a one-line copy should show its 32 bytes"
-grep -q "0100: " inspect.txt && fail "inspect pak id -x: should show only sector 0"
-grep -q "Sector 0: ID sector:$" inspect.txt && fail "inspect pak id -x: bytes should be split by field, not dumped as one block"
+[ "$(grep -c '^0x' inspect.txt)" = 1 ] || fail "inspect pak id: should show only sector 0, without the layout"
+grep -q "^00e0: " inspect.txt || fail "inspect pak id: sector 0 not dumped"
+grep -q "0100: " inspect.txt && fail "inspect pak id: should show only sector 0"
+"$MEMPAK" inspect pak pak.mpk toc > inspect.txt
+grep -q "^0x0100-0x01ff  Sector 1: TOC:$" inspect.txt || fail "inspect pak toc: TOC missing"
+grep -q "^0x0200-0x02ff  Sector 2: backup TOC:$" inspect.txt || fail "inspect pak toc: backup TOC missing"
+[ "$(grep -c '^0x' inspect.txt)" = 2 ] || fail "inspect pak toc: should show only the two TOCs, without the layout"
+"$MEMPAK" inspect pak pak.mpk data > inspect.txt
+grep -q "Sector" inspect.txt && fail "inspect pak data: should show only data blocks"
+grep -q "^0x0700-0x7fff  Blocks 7-127: free:$" inspect.txt || fail "inspect pak data: free blocks missing"
+grep -q "^0x0700-0x7fff  Blocks 7-127: free$" inspect.txt && fail "inspect pak data: layout should be left out"
 cp pak.mpk id.mpk
 printf '\x00' | dd of=id.mpk bs=1 seek=$((0x9c)) conv=notrunc 2>/dev/null  # break backup 2's checksum
-"$MEMPAK" inspect pak id.mpk id > inspect.txt
-grep -q "ID block (backup 2)  damaged: bad checksum" inspect.txt || fail "inspect pak id: damaged copy not reported"
-grep -q "checksum 1         0x0025 (bad: the words at 0x00-0x1b sum to 0x6625)" inspect.txt || fail "inspect pak id: bad checksum not explained"
+"$MEMPAK" inspect pak -f id.mpk id > inspect.txt 2>/dev/null
+grep -q "ID block (backup 2)  damaged: bad checksum" inspect.txt || fail "inspect pak -f id: damaged copy not reported"
+grep -q "checksum 1         bad: should be 0x6625, the sum of the words at 0x00-0x1b" inspect.txt || fail "inspect pak -f id: bad checksum not explained"
+grep -q "Sector 1" inspect.txt && fail "inspect pak -f id: should show only sector 0"
 rc=0; "$MEMPAK" inspect pak pak.mpk bogus >/dev/null 2>&1 || rc=$?
 [ "$rc" = 2 ] || fail "inspect pak with an unknown section should be a usage error (exit 2), got $rc"
-pass "inspect pak id"
+"$MEMPAK" format dmg.mpk >/dev/null
+"$MEMPAK" insert dmg.mpk test.note >/dev/null
+"$MEMPAK" insert dmg.mpk test.note >/dev/null
+printf '\x00\x00' | dd of=dmg.mpk bs=1 seek=$((0x306)) conv=notrunc 2>/dev/null  # slot 0: start block lost
+"$MEMPAK" inspect pak -f dmg.mpk notes > inspect.txt
+grep -Eq "slot 0 +'TEST', damaged: broken block chain" inspect.txt || fail "inspect pak -f notes: damaged note not reported"
+grep -Eq "start inode +not a data block: damaged" inspect.txt || fail "inspect pak -f notes: bad start inode not explained"
+"$MEMPAK" inspect pak -f dmg.mpk toc > inspect.txt
+grep -Eq "blocks 5-6 +used, but not part of a readable note" inspect.txt || fail "inspect pak -f toc: orphaned blocks not reported"
+grep -Eq "^    0x010a +2 +block 5 +last block of a note$" inspect.txt || fail "inspect pak -f toc: orphaned entries not decoded"
+pass "inspect pak SECTION"
 
 # insert into a specific slot
 "$MEMPAK" insert -s 5 pak.mpk test.note > /dev/null
@@ -140,12 +169,14 @@ grep -q "Name:      TEST" inspect.txt || fail "inspect note: wrong name"
 grep -q "Game code: NSME (" inspect.txt || fail "inspect note: wrong game code or no title"
 grep -q "Publisher: 01" inspect.txt || fail "inspect note: wrong publisher"
 grep -q "Size:      2 blocks (512 bytes of data)" inspect.txt || fail "inspect note: wrong size"
-grep -q "Header:" inspect.txt && fail "inspect note: hex dump shown without -x"
-"$MEMPAK" inspect note -x test.note > inspect.txt
-grep -q "^  0x0006   2  start inode     0xcafe (note file marker" inspect.txt || fail "inspect note -x: header fields missing"
-grep -A1 "^  0x0000   4  game code" inspect.txt | grep -q "^              0000: 4e 53 4d 45 " || fail "inspect note -x: game code bytes should follow the field"
-grep -q "^  0x0010  16  name            \"TEST\"$" inspect.txt || fail "inspect note -x: name field missing"
-grep -q "^01e0: " inspect.txt || fail "inspect note -x: data not dumped"
+grep -q "^0000: 4e 53 4d 45 30 31 ca fe" inspect.txt || fail "inspect note: header should be dumped"
+grep -q "^01e0: " inspect.txt || fail "inspect note: data not dumped"
+grep -q "start inode" inspect.txt && fail "inspect note: fields shown without -f"
+"$MEMPAK" inspect note -f test.note > inspect.txt
+grep -q "^  0x0006   2  start inode     note file marker" inspect.txt || fail "inspect note -f: header fields missing"
+grep -A1 "^  0x0000   4  game code" inspect.txt | grep -q "^              0000: 4e 53 4d 45 " || fail "inspect note -f: game code bytes should follow the field"
+grep -q "^  0x0010  16  name            \"TEST\"$" inspect.txt || fail "inspect note -f: name field missing"
+grep -q "^01e0: " inspect.txt || fail "inspect note -f: data not dumped"
 if "$MEMPAK" inspect note blank.mpk >/dev/null 2>&1; then fail "inspect of a non-note file should fail"; fi
 pass "inspect note"
 

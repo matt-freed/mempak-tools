@@ -133,13 +133,15 @@ Copies that fail their checksums, or differ from the copy in use, are reported
 as damaged, but the pak reads normally. `adapter read` prints a warning naming
 them, and `ls` lists them among the repairs it recommends (section 5). `repair` rewrites them from the copy in use (section 5).
 
-`mempak inspect pak PAKFILE id` shows sector 0 field by field. The copy in use,
-and any copy that fails its checksums or differs from it, is broken into the
-fields above; a bad checksum is shown with the value it should have. Copies
-identical to the one in use, and areas whose bytes are all the same, take one
-line each. The label and the serial number are shown only by their first 8
-bytes. With `-x`, every field is followed by its bytes, so the dump is split
-at the field boundaries above and covers all 256 bytes of the sector.
+`mempak inspect pak -f PAKFILE id` shows sector 0 field by field, each field
+followed by its bytes, so the dump is split at the field boundaries above and
+covers all 256 bytes of the sector. Next to each field is only what its bytes
+mean: whether a checksum is right (and if not, what it should be), what the
+device ID's bit 0 says, and the bank count as a size. Fields with no known
+meaning, such as the label, the serial number and the unused bytes, have
+nothing there; their bytes are the whole story. The copy in use, and any copy
+that fails its checksums or differs from it, is broken into the fields above;
+a copy identical to the one in use is one field, with its 32 bytes under it.
 The ID sector has the same layout on multi-bank paks, so `inspect pak … id`
 works on them too, with a warning.
 
@@ -232,6 +234,24 @@ one that was valid, so at least one valid TOC exists at every step.
 
 Free space is the number of entries `5..127` whose value is `0x03`. The maximum
 is 123.
+
+### Inspecting the TOC
+
+`mempak inspect pak -f PAKFILE toc` shows each TOC copy field by field, each
+field followed by its bytes:
+
+- byte 0 (unused) and the checksum, which is "ok" or says what it should be;
+- entries 1–4 together, as the reserved sectors;
+- entries 5–127, grouped into the same runs as the data blocks (section 4,
+  "Following the block chain"), with the run's chain in chain order and where
+  it goes next, such as `12→13→…→73, then end` or `74→75→76→77, then block 86`.
+  Free runs are labelled "free". A run that no readable note reaches has each
+  entry decoded on its own: "next block N", "last block of a note" or
+  "invalid". Entries whose high byte is not `0` are pointed out.
+
+Each copy is decoded from its own entries, so a stale or damaged backup shows
+its own chains. A copy identical to the one in use is a single field, with its
+256 bytes under it.
 
 ## 4. Sectors 3–4: note table
 
@@ -343,6 +363,17 @@ share one heading when they are free, or when they hold consecutive parts of
 the same note in either direction. Inserted notes are linked in reverse, so
 their runs read like "parts 5-1 of 5". Without a valid TOC, blocks 5–127 are
 shown as one unlabelled section.
+
+`mempak inspect pak -f PAKFILE notes` shows the note table one slot at a time.
+A free slot (zero game or publisher code) is a single field labelled "free",
+with its 32 bytes under it. A used slot is labelled with its name and size, or
+"damaged: broken block chain", and split into the fields of the table above:
+the game code with the game's title when known, the publisher code, the start
+inode as a block number (or "not a data block: damaged"), the status and
+unused bytes (shown only as bytes), the extension character and the name.
+GameShark's non-ASCII codes are labelled "Datel GameShark". The data blocks
+themselves are always shown as plain hex, since their layout is up to each
+game.
 
 ### Name display
 
@@ -506,11 +537,12 @@ Copy the slot's header, replace the inode with `0xCAFE`, then append the data.
 
 ### Inspect
 
-`mempak inspect note` applies the import checks below and then shows the header
-fields. With `-x` it also shows the header field by field, using the
-note-table layout in section 4, each field followed by its bytes. The header
-is the file's own, so the start inode shows the `CA FE` marker. The data
-follows as one dump, with offsets from the start of the data.
+`mempak inspect note` applies the import checks below, shows the main header
+fields, and then hex dumps the header and the data. With `-f`, the header is
+shown field by field instead, using the note-table layout in section 4, each
+field followed by its bytes. The header is the file's own, so the start inode
+shows the `CA FE` marker. The data is always one dump, with offsets from the
+start of the data.
 
 ### Import
 
