@@ -463,3 +463,176 @@ func TestReadNoteFile(t *testing.T) {
 		t.Error("partial block accepted")
 	}
 }
+
+func TestSections(t *testing.T) {
+	img := New()
+	insert(t, img, testNote(2, 0), -1) // blocks 5-6
+	insert(t, img, testNote(1, 1), -1) // block 7
+	// A damaged note: slot 1 loses its start block, so block 7 is orphaned.
+	img.noteHeader(1)[6], img.noteHeader(1)[7] = 0, 0
+
+	got := img.Sections()
+	want := []string{
+		"Sector 0: ID sector",
+		"Sector 1: TOC",
+		"Sector 2: backup TOC",
+		"Sectors 3-4: note table",
+		// Blocks are linked in reverse, so block 5 holds the note's last part.
+		"Blocks 5-6: note 0 'TEST', parts 2-1 of 2",
+		"Block 7: used, but not part of a readable note",
+		"Blocks 8-127: free",
+	}
+	var labels []string
+	total := 0
+	for _, s := range got {
+		labels = append(labels, s.Label)
+		if s.Offset != total {
+			t.Errorf("%s: offset %#x, want %#x", s.Label, s.Offset, total)
+		}
+		total += len(s.Data)
+	}
+	if !slices.Equal(labels, want) {
+		t.Errorf("labels:\n got %q\nwant %q", labels, want)
+	}
+	if total != Size {
+		t.Errorf("sections cover %d bytes, want %d", total, Size)
+	}
+
+	for i := BlockSize; i < 3*BlockSize; i++ {
+		img.Data[i] = 0xFF // both TOCs fail their checksum
+	}
+	got = img.Sections()
+	if l := got[len(got)-1].Label; l != "Blocks 5-127: data (no valid TOC, so the notes' blocks are unknown)" {
+		t.Errorf("no TOC: last label %q", l)
+	}
+	if got[1].Label != "Sector 1: TOC (bad checksum)" {
+		t.Errorf("no TOC: %q", got[1].Label)
+	}
+}
+
+func TestIDSectorFields(t *testing.T) {
+	img := New()
+	got := img.IDSectorFields()
+	type row struct {
+		off   int
+		name  string
+		value string
+		subs  int
+	}
+	want := []row{
+		{0x00, "label", "81 01 02 03 04 05 06 07 …", 0},
+		{0x20, "ID block (primary)", "in use", 7},
+		{0x40, "unused", "all 0x00", 0},
+		{0x60, "ID block (backup 1)", "identical to the copy in use", 0},
+		{0x80, "ID block (backup 2)", "identical to the copy in use", 0},
+		{0xA0, "unused", "all 0x00", 0},
+		{0xC0, "ID block (backup 3)", "identical to the copy in use", 0},
+		{0xE0, "unused", "all 0x00", 0},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("got %d fields, want %d", len(got), len(want))
+	}
+	for i, w := range want {
+		g := got[i]
+		if g.Offset != w.off || len(g.Data) != 32 || g.Name != w.name || g.Value != w.value || len(g.Fields) != w.subs {
+			t.Errorf("field %d: got %#x %q %q (%d sub-fields), want %#x %q %q (%d)",
+				i, g.Offset, g.Name, g.Value, len(g.Fields), w.off, w.name, w.value, w.subs)
+		}
+	}
+	primary := map[string]string{}
+	for _, f := range got[1].Fields {
+		primary[f.Name] = f.Value
+	}
+	for name, v := range map[string]string{
+		"device ID":  "0xff (bit 0 set: controller pak)",
+		"bank count": "1 (32 KiB)",
+		"checksum 1": "0x6625 (ok)",
+		"checksum 2": "0x99cd (ok)",
+	} {
+		if primary[name] != v {
+			t.Errorf("primary %s: got %q, want %q", name, primary[name], v)
+		}
+	}
+
+	// Damage the primary: backup 1 takes over, and the primary is expanded.
+	img.Data[0x20] ^= 0xFF
+	got = img.IDSectorFields()
+	if got[1].Value != "damaged: bad checksum" || len(got[1].Fields) != 7 {
+		t.Errorf("damaged primary: %q, %d sub-fields", got[1].Value, len(got[1].Fields))
+	}
+	if v := got[1].Fields[5].Value; v != "0x6625 (bad: the words at 0x00-0x1b sum to 0x6725)" {
+		t.Errorf("damaged primary checksum 1: %q", v)
+	}
+	if got[3].Value != "in use" || got[4].Value != "identical to the copy in use" {
+		t.Errorf("backups: %q, %q", got[3].Value, got[4].Value)
+	}
+}
+
+func TestNoteFileHeaderFields(t *testing.T) {
+	note := testNote(1, 0)
+	note[0x0C] = 0x1A // extension 'A'
+	got := NoteFileHeaderFields(note)
+	want := []struct {
+		off   int
+		size  int
+		name  string
+		value string
+	}{
+		{0x00, 4, "game code", "NSME (Super Mario 64 (USA))"},
+		{0x04, 2, "publisher code", "01"},
+		{0x06, 2, "start inode", "0xcafe (note file marker; set when the note is inserted)"},
+		{0x08, 1, "status", "0x00"},
+		{0x09, 1, "unused", "0x00"},
+		{0x0A, 2, "unused", "all 0x00"},
+		{0x0C, 4, "extension", "'A' (1a 00 00 00)"},
+		{0x10, 16, "name", `"TEST"`},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("got %d fields, want %d", len(got), len(want))
+	}
+	total := 0
+	for i, w := range want {
+		g := got[i]
+		if g.Offset != w.off || len(g.Data) != w.size || g.Name != w.name || g.Value != w.value {
+			t.Errorf("field %d: got %#x+%d %q %q, want %#x+%d %q %q",
+				i, g.Offset, len(g.Data), g.Name, g.Value, w.off, w.size, w.name, w.value)
+		}
+		total += len(g.Data)
+	}
+	if total != noteHeaderSize {
+		t.Errorf("fields cover %d bytes, want %d", total, noteHeaderSize)
+	}
+
+	gs := NoteFileHeaderFields(gameSharkNote())
+	if gs[0].Value != "3badd1e5" || gs[1].Value != "fade" {
+		t.Errorf("GameShark codes: %q, %q", gs[0].Value, gs[1].Value)
+	}
+}
+
+// TestIDSectorFieldsCover checks that the sub-fields of every expanded ID
+// block cover all of its bytes, so 'inspect pak -x id' shows every byte.
+func TestIDSectorFieldsCover(t *testing.T) {
+	img := New()
+	img.Data[0x80] ^= 1 // damage backup 2, so it is expanded too
+	next := 0
+	var walk func([]Field)
+	walk = func(fs []Field) {
+		for _, f := range fs {
+			if len(f.Fields) > 0 {
+				walk(f.Fields)
+				continue
+			}
+			if f.Offset != next {
+				t.Errorf("%s at %#x, want %#x", f.Name, f.Offset, next)
+			}
+			if !bytes.Equal(f.Data, img.Data[f.Offset:f.Offset+len(f.Data)]) {
+				t.Errorf("%s: data does not match the image", f.Name)
+			}
+			next = f.Offset + len(f.Data)
+		}
+	}
+	walk(img.IDSectorFields())
+	if next != BlockSize {
+		t.Errorf("fields end at %#x, want %#x", next, BlockSize)
+	}
+}

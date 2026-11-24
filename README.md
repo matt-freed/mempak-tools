@@ -30,7 +30,8 @@ mempak adapter erase [OPTIONS] [-y] [--fill-ff]           Erase the mempak
 mempak ls [-v] PAKFILE                                    List notes
 mempak rm PAKFILE SLOT                                    Delete a note
 mempak extract PAKFILE SLOT OUTFILE                       Export a note to a note file
-mempak inspect [-x] NOTEFILE                              Show a note file's name, codes and size (-x: hex dump)
+mempak inspect pak [-x] PAKFILE [SECTION]                 Show an image's layout, or one section field by field (-x: bytes)
+mempak inspect note [-x] NOTEFILE                         Show a note file's name, codes and size (-x: header fields and bytes)
 mempak insert [-s N [-o]] PAKFILE NOTEFILE                Import a note file
 mempak format OUTFILE                                     Create an empty image
 mempak repair [-y] PAKFILE                                Repair a damaged image (keeps PAKFILE.bak)
@@ -73,7 +74,9 @@ Note slots are numbered 0–15, as shown by `mempak ls`.
 | Option | Meaning |
 |---|---|
 | `ls -v, --verbose` | Also show each note's game code (its last character is the region) and publisher code, and the game's title when the code is a known retail cartridge. |
-| `inspect -x, --hex` | Also hex dump the note file's 32-byte header and its data. |
+| `inspect pak -x, --hex` | Also show the bytes behind each line. After the list of sections, hex dump each one; with a SECTION, show each field's bytes under it. The list is what `inspect pak` shows without `-x`: the ID sector, the two TOCs, the note table and the data blocks, each run of blocks labelled with the note (and which of its parts) it holds, or as free. Offsets are from the start of the image. |
+| `inspect pak PAKFILE SECTION` | Show one section field by field instead of the layout. So far the only section is `id`: sector 0's label and the four ID block copies, with the copy in use and any damaged or different copy broken into its fields (serial number, device ID, bank count, checksums). Long values such as the label and serial number are shortened to their first 8 bytes; `-x` shows them in full. |
+| `inspect note -x, --hex` | Also show the note file's 32-byte header field by field (game code, publisher, start inode, status, extension, name), each field followed by its bytes, then hex dump the data. |
 | `insert -s, --slot N` | Write the note to slot N. If the slot already holds a note, you are asked before it is replaced. |
 | `insert -o, --overwrite` | With `-s`, replace an existing note without asking. |
 

@@ -47,16 +47,6 @@ func warnDamagedID(img *mempak.Image) {
 		"The pak is still readable from the remaining copies.\n", len(damaged), strings.Join(names, ", "))
 }
 
-// code formats a game or publisher code: as text if printable, else in hex.
-func code(b []byte) string {
-	for _, c := range b {
-		if c < 0x20 || c > 0x7e {
-			return fmt.Sprintf("%x", b)
-		}
-	}
-	return string(b)
-}
-
 // padRight pads s with spaces to width terminal columns. The kana of the
 // N64 character set are full-width and take two columns.
 func padRight(s string, width int) string {
@@ -80,7 +70,8 @@ func newLsCmd() *cobra.Command {
 		Use:   "ls PAKFILE",
 		Short: "List notes",
 		Long: "List the notes (saves) stored in a mempak image.\n" +
-			"Images are 32 KiB raw .mpk files.",
+			"Images are 32 KiB raw .mpk files. To see the image's layout and bytes, use\n" +
+			"'mempak inspect pak'.",
 		Args: args(cobra.ExactArgs(1)),
 		RunE: func(cmd *cobra.Command, a []string) error {
 			img, err := loadImage(a[0])
@@ -119,7 +110,7 @@ func newLsCmd() *cobra.Command {
 				}
 				fmt.Fprintf(stdout, "%s %s", padRight(n.Name(), 20), size)
 				if verbose {
-					fmt.Fprintf(stdout, "  game %s  publisher %s", code(n.GameCode()), code(n.Publisher()))
+					fmt.Fprintf(stdout, "  game %s  publisher %s", mempak.CodeString(n.GameCode()), mempak.CodeString(n.Publisher()))
 					if name, ok := mempak.GameName(n.GameCode()); ok {
 						fmt.Fprintf(stdout, "  %s", name)
 					}
@@ -196,48 +187,6 @@ func newExtractCmd() *cobra.Command {
 			return nil
 		},
 	}
-}
-
-func newInspectCmd() *cobra.Command {
-	var hex bool
-	cmd := &cobra.Command{
-		Use:   "inspect NOTEFILE",
-		Short: "Show what a note file holds",
-		Long: "Show the name, game and publisher codes and size of a note file, as written by\n" +
-			"'mempak extract'. With -x, also hex dump its header and data.",
-		Args: args(cobra.ExactArgs(1)),
-		RunE: func(cmd *cobra.Command, a []string) error {
-			b, err := os.ReadFile(a[0])
-			if err != nil {
-				return err
-			}
-			n, data, err := mempak.ReadNoteFile(b)
-			if err != nil {
-				return fmt.Errorf("could not read note '%s': %w", a[0], err)
-			}
-			fmt.Fprintf(stdout, "Note file: %s\n", a[0])
-			fmt.Fprintf(stdout, "Name:      %s\n", n.Name())
-			fmt.Fprintf(stdout, "Game code: %s", code(n.GameCode()))
-			if name, ok := mempak.GameName(n.GameCode()); ok {
-				fmt.Fprintf(stdout, " (%s)", name)
-			}
-			fmt.Fprintln(stdout)
-			fmt.Fprintf(stdout, "Publisher: %s\n", code(n.Publisher()))
-			fmt.Fprintf(stdout, "Status:    0x%02x\n", n.Header[0x08])
-			fmt.Fprintf(stdout, "Size:      %d blocks (%d bytes of data)\n", n.Blocks, len(data))
-			if !hex {
-				return nil
-			}
-			fmt.Fprintln(stdout, "\nHeader:")
-			if err := mempak.Hexdump(stdout, n.Header[:]); err != nil {
-				return err
-			}
-			fmt.Fprintln(stdout, "\nData (offsets from the start of the data):")
-			return mempak.Hexdump(stdout, data)
-		},
-	}
-	cmd.Flags().BoolVarP(&hex, "hex", "x", false, "also hex dump the note's header and data")
-	return cmd
 }
 
 func newInsertCmd() *cobra.Command {

@@ -79,13 +79,19 @@ const (
 // the sum of the fourteen 16-bit words before it; checksum 2 (at 0x1E) is
 // 0xFFF2 minus checksum 1.
 func idBlockValid(b []byte) bool {
+	c1 := uint16(b[0x1C])<<8 | uint16(b[0x1D])
+	c2 := uint16(b[0x1E])<<8 | uint16(b[0x1F])
+	return idBlockSum(b) == c1 && c2 == 0xFFF2-c1
+}
+
+// idBlockSum returns what checksum 1 of an ID block should be: the sum of
+// its fourteen 16-bit words before the checksums.
+func idBlockSum(b []byte) uint16 {
 	var sum uint16
 	for i := 0; i < 0x1C; i += 2 {
 		sum += uint16(b[i])<<8 | uint16(b[i+1])
 	}
-	c1 := uint16(b[0x1C])<<8 | uint16(b[0x1D])
-	c2 := uint16(b[0x1E])<<8 | uint16(b[0x1F])
-	return sum == c1 && c2 == 0xFFF2-c1
+	return sum
 }
 
 // idBlock returns the index (0-3) of the first ID block copy with valid

@@ -97,12 +97,20 @@ the others.
 | Offset | Size | Contents                                                 |
 |--------|------|----------------------------------------------------------|
 | `0x00` | 24   | Serial number (any value unique to this pak)             |
-| `0x18` | 1    | unused (normally `0`)                                    |
-| `0x19` | 1    | Device ID: bit 0 = 1 for a Controller Pak; other bits normally 0 but may be garbage |
+| `0x18` | 1    | unused (`0x00` or `0xFF`; see below)                     |
+| `0x19` | 1    | Device ID: bit 0 = 1 for a Controller Pak; the other bits have no known meaning (see below) |
 | `0x1A` | 1    | Bank count, in 32 KiB banks (`1` for a standard pak)     |
-| `0x1B` | 1    | unused (normally `0`)                                    |
+| `0x1B` | 1    | unused (`0x00` or `0xFF`; see below)                     |
 | `0x1C` | 2    | Checksum 1 = sum of the fourteen 16-bit words at `0x00`–`0x1B`, mod 0x10000 |
 | `0x1E` | 2    | Checksum 2 = `0xFFF2 − checksum 1`                       |
+
+Both values occur in these three bytes. The format template in this section,
+as found on official paks, has `0xFF` in all three (`ff ff 01 ff` at
+`0x18`–`0x1B`). A pak with a different serial number, and so not formatted
+from that template, has `00 01 01 00` there: both unused bytes `0x00` and
+device ID `0x01`. Nothing is known to read the unused bytes or the device ID's
+other bits, and **this tool** neither checks them nor treats either value as
+damage: `inspect pak … id` shows them as they are.
 
 Nintendo's library reads the **serial number** when the pak is initialised
 and compares it on every access. If it has changed, the call returns
@@ -124,6 +132,16 @@ reported as not formatted or corrupted. Nothing else in sector 0 is checked.
 Copies that fail their checksums, or differ from the copy in use, are reported
 as damaged, but the pak reads normally. `adapter read` prints a warning naming
 them, and `ls` lists them among the repairs it recommends (section 5). `repair` rewrites them from the copy in use (section 5).
+
+`mempak inspect pak PAKFILE id` shows sector 0 field by field. The copy in use,
+and any copy that fails its checksums or differs from it, is broken into the
+fields above; a bad checksum is shown with the value it should have. Copies
+identical to the one in use, and areas whose bytes are all the same, take one
+line each. The label and the serial number are shown only by their first 8
+bytes. With `-x`, every field is followed by its bytes, so the dump is split
+at the field boundaries above and covers all 256 bytes of the sector.
+The ID sector has the same layout on multi-bank paks, so `inspect pak … id`
+works on them too, with a warning.
 
 
 ### Format template
@@ -316,6 +334,16 @@ loop:
 The note's data is its blocks' sectors joined in chain order. Its size is
 always `len(blocks) × 256`.
 
+`mempak inspect pak` uses the chains to label the data blocks. Each
+block is labelled with the note it belongs to and its position in that note's
+chain ("part 1 of 5" is the inode), or as free (`0x03` in the TOC). A block the
+TOC marks as used that no readable chain reaches, such as a block of a damaged
+note, is labelled "used, but not part of a readable note". Consecutive blocks
+share one heading when they are free, or when they hold consecutive parts of
+the same note in either direction. Inserted notes are linked in reverse, so
+their runs read like "parts 5-1 of 5". Without a valid TOC, blocks 5–127 are
+shown as one unlabelled section.
+
 ### Name display
 
 **This tool** displays a name as the 16 name bytes followed by `.` and the
@@ -478,8 +506,11 @@ Copy the slot's header, replace the inode with `0xCAFE`, then append the data.
 
 ### Inspect
 
-`mempak inspect` applies the import checks below and then shows the header
-fields; the header it dumps with `-x` is the file's own, with `CA FE` intact.
+`mempak inspect note` applies the import checks below and then shows the header
+fields. With `-x` it also shows the header field by field, using the
+note-table layout in section 4, each field followed by its bytes. The header
+is the file's own, so the start inode shows the `CA FE` marker. The data
+follows as one dump, with offsets from the start of the data.
 
 ### Import
 

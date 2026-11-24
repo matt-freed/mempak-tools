@@ -11,10 +11,14 @@ import (
 
 // Hexdump writes data as lines of 32 bytes: the offset, the bytes in hex and
 // the bytes as ASCII.
-func Hexdump(w io.Writer, data []byte) error {
+func Hexdump(w io.Writer, data []byte) error { return HexdumpAt(w, data, 0) }
+
+// HexdumpAt is Hexdump with offsets starting at base, for dumping part of a
+// larger buffer.
+func HexdumpAt(w io.Writer, data []byte, base int) error {
 	for off := 0; off < len(data); off += 32 {
 		line := data[off:min(off+32, len(data))]
-		if _, err := fmt.Fprintf(w, "%04x: ", off); err != nil {
+		if _, err := fmt.Fprintf(w, "%04x: ", base+off); err != nil {
 			return err
 		}
 		for _, b := range line {
