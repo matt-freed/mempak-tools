@@ -74,6 +74,10 @@ paks are not supported", instead of misreading the first 32 KiB as a whole pak.
 
 ## 2. Sector 0: ID sector
 
+The ID sector identifies the pak and marks it as formatted. Its ID block holds
+the pak's serial number and bank count, and four checksummed copies let a
+damaged one be recovered.
+
 | Offset | Size | Contents              |
 |--------|------|-----------------------|
 | `0x00` | 32   | Label                 |
@@ -131,7 +135,7 @@ reported as not formatted or corrupted. Nothing else in sector 0 is checked.
 
 Copies that fail their checksums, or differ from the copy in use, are reported
 as damaged, but the pak reads normally. `adapter read` prints a warning naming
-them, and `ls` lists them among the repairs it recommends (section 5). `repair` rewrites them from the copy in use (section 5).
+them, and `ls` lists them among the repairs it recommends (section 6). `repair` rewrites them from the copy in use (section 6).
 
 `mempak inspect pak -f PAKFILE id` shows sector 0 field by field, each field
 followed by its bytes, so the dump is split at the field boundaries above and
@@ -169,6 +173,10 @@ this tool gets the same serial number.
 
 ## 3. Sectors 1–2: TOC
 
+The TOC is the pak's block allocation table, like a FAT. It records which data
+blocks are free and links each note's blocks into a chain. It doesn't say which
+note a chain belongs to; the note table (section 4) does that.
+
 The TOC is a 256-byte table of **128 two-byte entries**, one per sector. Entry
 `i` is at bytes `2i` and `2i+1`, and its low byte (`2i+1`) is the "next block"
 pointer of block `i`:
@@ -192,7 +200,7 @@ a reader can fall back to the backup if the primary is damaged.
 
 `osPfsChecker` in Nintendo's library repairs damaged TOCs and note tables,
 usually losing data. **This tool** only reads the TOC as it is; `repair`
-(section 5) fixes a damaged TOC copy and frees blocks that belong to no note.
+(section 6) fixes a damaged TOC copy and frees blocks that belong to no note.
 
 ### Checksum
 
@@ -242,7 +250,7 @@ field followed by its bytes:
 
 - byte 0 (unused) and the checksum, which is "ok" or says what it should be;
 - entries 1–4 together, as the reserved sectors;
-- entries 5–127, grouped into the same runs as the data blocks (section 4,
+- entries 5–127, grouped into the same runs as the data blocks (section 5,
   "Following the block chain"), with the run's chain in chain order and where
   it goes next, such as `12→13→…→73, then end` or `74→75→76→77, then block 86`.
   Free runs are labelled "free". A run that no readable note reaches has each
@@ -254,6 +262,10 @@ its own chains. A copy identical to the one in use is a single field, with its
 256 bytes under it.
 
 ## 4. Sectors 3–4: note table
+
+The note table is the pak's directory. Each entry names a note, says which
+game owns it, and gives its start inode, the first block of the chain that the
+TOC (section 3) then follows.
 
 There are 16 note slots (0–15). Each has a 32-byte header at
 `0x300 + slot × 32`. Unused entries are all zeros.
@@ -328,42 +340,16 @@ cleared to 32 zero bytes.
 A used slot is one of two things:
 
 - **A note:** the start inode is in `0x0005`–`0x007F` and the block chain
-  starting there is valid (see below).
+  starting there is valid (section 5).
 - **A damaged note:** anything else. `ls` shows it as
   `(damaged: broken block chain)`. Reading, exporting or deleting it fails with
   "filesystem is corrupted". A damaged note is **never treated as free**:
   `insert` without `-s` skips it, and `insert -s N` asks before overwriting it.
   Its blocks can't be traced, so they stay marked as used after it is
-  overwritten. `repair` (section 5) removes damaged notes and frees their
+  overwritten. `repair` (section 6) removes damaged notes and frees their
   blocks.
 
-### Following the block chain
-
-```
-blocks = [inode]
-cur = inode
-loop:
-    n = toc[2*cur + 1]
-    if n == 0x01: done
-    if n == 0x03: corrupt              (a note cannot contain a free block)
-    if n < 0x05 or n > 0x7F: corrupt
-    cur = n; append cur to blocks
-    if len(blocks) > 123: corrupt      (loop in the chain)
-```
-
-The note's data is its blocks' sectors joined in chain order. Its size is
-always `len(blocks) × 256`.
-
-`mempak inspect pak` uses the chains to label the data blocks. Each
-block is labelled with the note it belongs to and its position in that note's
-chain ("part 1 of 5" is the inode), or as free (`0x03` in the TOC). A block the
-TOC marks as used that no readable chain reaches, such as a block of a damaged
-note, is labelled "used, but not part of a readable note". Consecutive blocks
-share one heading when they are free, or when they hold consecutive parts of
-the same note in either direction. Notes written by games, or inserted by this
-tool, read like "parts 1-5 of 5"; notes inserted by libdragon-based tools,
-which link in reverse, read like "parts 5-1 of 5". Without a valid TOC, blocks
-5–127 are shown as one unlabelled section.
+### Inspecting the note table
 
 `mempak inspect pak -f PAKFILE notes` shows the note table one slot at a time.
 A free slot (zero game or publisher code) is a single field labelled "free",
@@ -377,8 +363,8 @@ themselves are always shown as plain hex, since their layout is up to each
 game.
 
 `mempak inspect pak -s N PAKFILE` shows only what belongs to the note in slot
-N: its note-table entry, its entries in the TOC in use (grouped into runs, as
-above), and its data blocks. The other TOC copy is compared at the same
+N: its note-table entry, its entries in the TOC in use (grouped into runs, as in
+section 3), and its data blocks. The other TOC copy is compared at the same
 blocks; where its bytes differ, its entries there are shown too, each decoded
 on its own, since its chain may not hold. A damaged note, or any note in an
 image without a valid TOC, shows only its note-table entry, since its blocks
@@ -417,7 +403,50 @@ The Unicode characters used for display are U+0027 for `0x37`, and U+309B
 > typo for U+309B and U+309C). Only the display differs; the name bytes stored
 > on the pak are the same.
 
-## 5. Filesystem operations
+## 5. Sectors 5–127: note data
+
+The data area holds the notes' contents: 123 blocks of 256 bytes, each
+numbered by its sector. A note's data is the blocks of its chain, which starts
+at the note table's start inode (section 4) and continues through the TOC
+(section 3).
+
+The filesystem doesn't interpret the data. Its layout is up to the game that
+wrote it, and nothing records how much of the last block is used, except the
+libdragon extension (section 4). Blocks keep their bytes when they are freed:
+deleting a note or formatting the pak doesn't clear them (section 6).
+
+### Following the block chain
+
+```
+blocks = [inode]
+cur = inode
+loop:
+    n = toc[2*cur + 1]
+    if n == 0x01: done
+    if n == 0x03: corrupt              (a note cannot contain a free block)
+    if n < 0x05 or n > 0x7F: corrupt
+    cur = n; append cur to blocks
+    if len(blocks) > 123: corrupt      (loop in the chain)
+```
+
+The note's data is its blocks' sectors joined in chain order. Its size is
+always `len(blocks) × 256`.
+
+### Inspecting the data
+
+`mempak inspect pak` uses the chains to label the data blocks. Each
+block is labelled with the note it belongs to and its position in that note's
+chain ("part 1 of 5" is the inode), or as free (`0x03` in the TOC). A block the
+TOC marks as used that no readable chain reaches, such as a block of a damaged
+note, is labelled "used, but not part of a readable note". Consecutive blocks
+share one heading when they are free, or when they hold consecutive parts of
+the same note in either direction. Notes written by games, or inserted by this
+tool, read like "parts 1-5 of 5"; notes inserted by libdragon-based tools,
+which link in reverse, read like "parts 5-1 of 5". Without a valid TOC, blocks
+5–127 are shown as one unlabelled section. The block contents are always shown
+as plain hex.
+
+## 6. Filesystem operations
 
 These describe how **this tool** changes a pak.
 
@@ -525,7 +554,7 @@ repairs and asks before changing anything (`-y` skips the question). It first
 copies the original file, byte for byte, to `PAKFILE.bak`, and refuses to run
 if that file already exists.
 
-## 6. Image files
+## 7. Image files
 
 **This tool** supports one image format: **`.mpk`**, the 32 768 raw pak bytes,
 nothing else. Every command that writes an image writes this format, whatever
@@ -547,7 +576,7 @@ it is shorter. `ls` lists it with a warning, so it can be inspected, but `rm`,
 Such files are handled as the wrong size. A multi-bank dump is still
 recognised from its ID block and rejected as multi-bank (section 1).
 
-## 7. Note files
+## 8. Note files
 
 A single note is exported in the format used by
 [bryc's mempak editor](https://github.com/bryc/mempak):
@@ -579,5 +608,5 @@ A note file is accepted only if **all** of these are true:
    `0x0005` as a placeholder until `insert` allocates blocks.
 3. The data after the header is a non-zero multiple of 256 bytes.
 
-The header is then inserted as described in section 5, keeping all its other
+The header is then inserted as described in section 6, keeping all its other
 bytes verbatim.
