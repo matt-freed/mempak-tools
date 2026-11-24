@@ -30,7 +30,7 @@ mempak adapter erase [OPTIONS] [-y] [--fill-ff]           Erase the mempak
 mempak ls [-v] PAKFILE                                    List notes
 mempak rm PAKFILE SLOT                                    Delete a note
 mempak extract PAKFILE SLOT OUTFILE                       Export a note to a note file
-mempak inspect pak [-f] PAKFILE [SECTION]                 Show an image's layout, then hex dump it by section
+mempak inspect pak [-f] [-s N] PAKFILE [SECTION]          Show an image's layout, then hex dump it by section
 mempak inspect note [-f] NOTEFILE                         Show a note file's name, codes and size, then hex dump it
 mempak insert [-s N [-o]] PAKFILE NOTEFILE                Import a note file
 mempak format OUTFILE                                     Create an empty image
@@ -77,6 +77,7 @@ Note slots are numbered 0–15, as shown by `mempak ls`.
 | `inspect pak PAKFILE` | Show the image's layout (the ID sector, the two TOCs, the note table and the data blocks, each run of blocks labelled with the note and which of its parts it holds, or as free), then hex dump each section. Each row of the layout names its section (`id`, `toc`, `notes` or `data`), which is the SECTION argument that shows just that part. Offsets are from the start of the image. The output is long, but the layout comes first, so `\| head -20` shows just that. |
 | `inspect pak -f, --fields` | Split each section into its fields, each followed by its bytes and labelled with what those bytes mean, where that is known (a checksum is "ok" or says what it should be; a field with no known meaning, such as the serial number, has no label). The ID sector, both TOCs (each run of entries with its chain, such as `12→13→…→73, then end`) and the note table (each used slot split into game code, publisher, start inode and so on) are decoded; the data blocks, whose layout is up to each game, are still dumped whole. |
 | `inspect pak PAKFILE SECTION` | Show only one section, without the layout: `id` (sector 0), `toc` (the TOC and its backup), `notes` (the note table) or `data` (the data blocks). Works with or without `-f`. |
+| `inspect pak -s, --slot N` | Show only what belongs to the note in slot N: its note-table entry, its TOC entries (the backup TOC's too, where they differ from the TOC in use) and its data blocks. Combine with `-f`, and with SECTION (`toc`, `notes` or `data`) to narrow it further. A damaged note shows only its note-table entry, since its blocks can't be found. |
 | `inspect note -f, --fields` | Show the note file's 32-byte header field by field (game code, publisher, start inode, status, extension, name), each followed by its bytes and labelled with what they mean where that is known, instead of as one dump. |
 | `insert -s, --slot N` | Write the note to slot N. If the slot already holds a note, you are asked before it is replaced. |
 | `insert -o, --overwrite` | With `-s`, replace an existing note without asking. |

@@ -39,22 +39,9 @@ func newInspectCmd() *cobra.Command {
 // pakSections are the sections 'inspect pak' can be limited to.
 var pakSections = []string{mempak.SectionID, mempak.SectionTOC, mempak.SectionNotes, mempak.SectionData}
 
-// sectionFields returns the decoded fields of a section, or nil for the data
-// blocks, which are only shown as hex since their layout is up to each game.
-func sectionFields(img *mempak.Image, s mempak.Section) []mempak.Field {
-	switch s.Kind {
-	case mempak.SectionID:
-		return img.IDSectorFields()
-	case mempak.SectionTOC:
-		return img.TOCFields(s.Offset / mempak.BlockSize)
-	case mempak.SectionNotes:
-		return img.NoteTableFields()
-	}
-	return nil
-}
-
 func newInspectPakCmd() *cobra.Command {
 	var fields bool
+	var slotStr string
 	cmd := &cobra.Command{
 		Use:   "pak PAKFILE [SECTION]",
 		Short: "Show the layout and bytes of a pak image",
@@ -69,6 +56,10 @@ func newInspectPakCmd() *cobra.Command {
 			"  toc    sectors 1-2: the TOC and its backup\n" +
 			"  notes  sectors 3-4: the note table\n" +
 			"  data   blocks 5-127\n\n" +
+			"With -s N, show only what belongs to the note in slot N (0-15, as shown by\n" +
+			"'mempak ls'): its note-table entry, its TOC entries and its data blocks. The\n" +
+			"backup TOC's entries are shown too when they differ from the TOC in use.\n" +
+			"SECTION then narrows it further (toc, notes or data).\n\n" +
 			"An image without a valid filesystem is still shown, but the command exits\n" +
 			"with status 1, like 'mempak ls'.",
 		Args:      args(cobra.RangeArgs(1, 2)),
@@ -79,6 +70,16 @@ func newInspectPakCmd() *cobra.Command {
 				only = a[1]
 				if !slices.Contains(pakSections, only) {
 					return usagef("unknown section '%s' (sections: %s)", only, strings.Join(pakSections, ", "))
+				}
+			}
+			slot := -1
+			if cmd.Flags().Changed("slot") {
+				var err error
+				if slot, err = parseSlot(slotStr); err != nil {
+					return err
+				}
+				if only == mempak.SectionID {
+					return usagef("the ID sector is not part of any note, so it can't be shown with -s")
 				}
 			}
 			img, err := loadImage(a[0])
@@ -100,12 +101,27 @@ func newInspectPakCmd() *cobra.Command {
 				return valid // its layout differs; the sections would be wrong
 			case valid != nil:
 				fmt.Fprintln(stdout, "Mempak invalid (not formatted or corrupted)")
-			case only == "" || only == mempak.SectionID:
+			case slot < 0 && (only == "" || only == mempak.SectionID):
 				warnDamagedID(img)
 			}
 
+			all := img.Sections()
+			hint := fmt.Sprintf("mempak inspect pak %s SECTION [-f]", a[0])
+			if slot >= 0 {
+				all, err = img.NoteSections(slot)
+				if errors.Is(err, mempak.ErrSlotEmpty) {
+					return fmt.Errorf("slot %d is free", slot)
+				} else if err != nil {
+					return err
+				}
+				if len(all) == 1 {
+					fmt.Fprintf(stdout, "The note's block chain can't be followed (the note is damaged, or there is "+
+						"no valid TOC), so only its note-table entry is shown.\n")
+				}
+				hint = fmt.Sprintf("mempak inspect pak %s -s %d SECTION [-f]", a[0], slot)
+			}
 			var sections []mempak.Section
-			for _, s := range img.Sections() {
+			for _, s := range all {
 				if only == "" || s.Kind == only {
 					sections = append(sections, s)
 				}
@@ -123,12 +139,12 @@ func newInspectPakCmd() *cobra.Command {
 				for _, s := range sections {
 					fmt.Fprintf(stdout, "0x%04x-0x%04x  %-7s  %s\n", s.Offset, s.Offset+len(s.Data)-1, s.Kind, s.Label)
 				}
-				fmt.Fprintf(stdout, "\nTo show one section: mempak inspect pak %s SECTION [-f]\n", a[0])
+				fmt.Fprintf(stdout, "\nTo show one section: %s\n", hint)
 			}
 			for _, s := range sections {
 				fmt.Fprintf(stdout, "\n%s:\n", heading(s))
-				if f := sectionFields(img, s); fields && f != nil {
-					err = printFields(f)
+				if fields && s.Fields != nil {
+					err = printFields(s.Fields)
 				} else {
 					err = mempak.HexdumpAt(stdout, s.Data, s.Offset)
 				}
@@ -143,6 +159,7 @@ func newInspectPakCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVarP(&fields, "fields", "f", false, "split each section into its fields, with each field's bytes")
+	cmd.Flags().StringVarP(&slotStr, "slot", "s", "", "show only what belongs to the note in slot `N` (0-15)")
 	return cmd
 }
 

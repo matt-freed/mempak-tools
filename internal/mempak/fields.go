@@ -214,30 +214,36 @@ func (img *Image) TOCFields(sector int) []Field {
 	}
 	runs, names := img.blockRuns(&t)
 	for _, r := range runs {
-		name := fmt.Sprintf("blocks %d-%d", r.first, r.last)
-		if r.first == r.last {
-			name = fmt.Sprintf("block %d", r.first)
-		}
-		f := field(d, off+2*r.first, 2*(r.last-r.first+1), name, r.label(names))
-		switch r.slot {
-		case runFree:
-		case runOrphan:
-			// No chain to follow, so say where each entry points.
-			for b := r.first; b <= r.last; b++ {
-				f.Fields = append(f.Fields, field(d, off+2*b, 2, fmt.Sprintf("block %d", b), entryValue(t.next(b))))
-			}
-		default:
-			f.Value += ": " + r.chain(&t)
-		}
-		for b := r.first; b <= r.last; b++ {
-			if t[2*b] != 0 {
-				f.Value += "; some high bytes are not 0 (ignored)"
-				break
-			}
-		}
-		out = append(out, f)
+		out = append(out, tocRunField(d, off, &t, r, names))
 	}
 	return out
+}
+
+// tocRunField decodes the entries of run r in TOC t, which is at offset off
+// of image data d.
+func tocRunField(d []byte, off int, t *toc, r blockRun, names []string) Field {
+	name := fmt.Sprintf("blocks %d-%d", r.first, r.last)
+	if r.first == r.last {
+		name = fmt.Sprintf("block %d", r.first)
+	}
+	f := field(d, off+2*r.first, 2*(r.last-r.first+1), name, r.label(names))
+	switch r.slot {
+	case runFree:
+	case runOrphan:
+		// No chain to follow, so say where each entry points.
+		for b := r.first; b <= r.last; b++ {
+			f.Fields = append(f.Fields, field(d, off+2*b, 2, fmt.Sprintf("block %d", b), entryValue(t.next(b))))
+		}
+	default:
+		f.Value += ": " + r.chain(t)
+	}
+	for b := r.first; b <= r.last; b++ {
+		if t[2*b] != 0 {
+			f.Value += "; some high bytes are not 0 (ignored)"
+			break
+		}
+	}
+	return f
 }
 
 // entryValue says what a TOC entry's next-block value means.

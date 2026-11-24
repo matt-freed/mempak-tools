@@ -149,6 +149,31 @@ grep -Eq "blocks 5-6 +used, but not part of a readable note" inspect.txt || fail
 grep -Eq "^    0x010a +2 +block 5 +last block of a note$" inspect.txt || fail "inspect pak -f toc: orphaned entries not decoded"
 pass "inspect pak SECTION"
 
+# inspect pak -s N: only what belongs to one note
+"$MEMPAK" inspect pak pak.mpk -s 0 > inspect.txt || fail "inspect pak -s failed"
+grep -Eq "^0x0300-0x031f +notes +Slot 0: 'TEST', 2 blocks$" inspect.txt || fail "inspect pak -s: note-table entry missing"
+grep -Eq "^0x010a-0x010d +toc +Sector 1: TOC entries of blocks 5-6$" inspect.txt || fail "inspect pak -s: TOC entries missing"
+grep -Eq "^0x0500-0x06ff +data +Blocks 5-6: note 0 'TEST', parts 2-1 of 2$" inspect.txt || fail "inspect pak -s: data blocks missing"
+grep -q "Sector 0" inspect.txt && fail "inspect pak -s: should not show the ID sector"
+grep -q "backup TOC" inspect.txt && fail "inspect pak -s: an identical backup TOC should not be shown"
+grep -q "^To show one section: mempak inspect pak pak.mpk -s 0 SECTION \[-f\]$" inspect.txt || fail "inspect pak -s: section hint missing"
+"$MEMPAK" inspect pak pak.mpk -s 0 toc -f > inspect.txt
+grep -Eq "^  0x010a +4 +blocks 5-6 +note 0 'TEST', parts 2-1 of 2: 6→5, then end$" inspect.txt || fail "inspect pak -s toc -f: chain missing"
+grep -q "Slot 0" inspect.txt && fail "inspect pak -s toc: should show only TOC entries"
+cp pak.mpk bk.mpk
+printf '\x03' | dd of=bk.mpk bs=1 seek=$((0x20d)) conv=notrunc 2>/dev/null  # backup TOC: block 6 free
+"$MEMPAK" inspect pak bk.mpk -s 0 -f toc > inspect.txt
+grep -Eq "Sector 2: backup TOC \(bad checksum\) entries of blocks 5-6:$" inspect.txt || fail "inspect pak -s: differing backup TOC entries missing"
+grep -Eq "^    0x020c +2 +block 6 +free$" inspect.txt || fail "inspect pak -s: differing backup entry not decoded"
+"$MEMPAK" inspect pak dmg.mpk -s 0 > inspect.txt || fail "inspect pak -s on a damaged note should succeed"
+grep -q "block chain can't be followed" inspect.txt || fail "inspect pak -s: damaged note not explained"
+if "$MEMPAK" inspect pak pak.mpk -s 3 >/dev/null 2>&1; then fail "inspect pak -s on a free slot should fail"; fi
+rc=0; "$MEMPAK" inspect pak pak.mpk -s 16 >/dev/null 2>&1 || rc=$?
+[ "$rc" = 2 ] || fail "inspect pak -s 16 should be a usage error (exit 2), got $rc"
+rc=0; "$MEMPAK" inspect pak pak.mpk -s 0 id >/dev/null 2>&1 || rc=$?
+[ "$rc" = 2 ] || fail "inspect pak -s with id should be a usage error (exit 2), got $rc"
+pass "inspect pak -s"
+
 # insert into a specific slot
 "$MEMPAK" insert -s 5 pak.mpk test.note > /dev/null
 "$MEMPAK" ls pak.mpk | grep -q "Note  5: TEST" || fail "insert -s 5: note 5 should be TEST"

@@ -375,6 +375,14 @@ GameShark's non-ASCII codes are labelled "Datel GameShark". The data blocks
 themselves are always shown as plain hex, since their layout is up to each
 game.
 
+`mempak inspect pak -s N PAKFILE` shows only what belongs to the note in slot
+N: its note-table entry, its entries in the TOC in use (grouped into runs, as
+above), and its data blocks. The other TOC copy is compared at the same
+blocks; where its bytes differ, its entries there are shown too, each decoded
+on its own, since its chain may not hold. A damaged note, or any note in an
+image without a valid TOC, shows only its note-table entry, since its blocks
+can't be found.
+
 ### Name display
 
 **This tool** displays a name as the 16 name bytes followed by `.` and the

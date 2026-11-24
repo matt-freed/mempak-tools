@@ -775,3 +775,89 @@ func TestHexdumpPadsShortLines(t *testing.T) {
 		t.Errorf("short line: %q", lines[1])
 	}
 }
+
+// TestSectionFieldsCover checks that every section's fields cover exactly its
+// bytes, for the whole image and for each note.
+func TestSectionFieldsCover(t *testing.T) {
+	img := New()
+	insert(t, img, testNote(2, 0), -1)
+	insert(t, img, testNote(3, 1), -1)
+	img.Data[2*BlockSize+2*5+1] = blockLast // backup TOC: note 0's entries differ
+	secs := img.Sections()
+	for slot := range 2 {
+		ns, err := img.NoteSections(slot)
+		if err != nil {
+			t.Fatal(err)
+		}
+		secs = append(secs, ns...)
+	}
+	for _, s := range secs {
+		if s.Kind == SectionData {
+			if s.Fields != nil {
+				t.Errorf("%s: data blocks should have no fields", s.Label)
+			}
+			continue
+		}
+		checkCover(t, img, s.Fields, s.Offset, s.Offset+len(s.Data))
+	}
+}
+
+func TestNoteSections(t *testing.T) {
+	img := New()
+	insert(t, img, testNote(2, 0), -1) // slot 0: blocks 6, 5
+	insert(t, img, testNote(1, 1), -1) // slot 1: block 7
+	insert(t, img, testNote(1, 2), -1) // slot 2: block 8
+
+	labels := func(slot int) []string {
+		t.Helper()
+		secs, err := img.NoteSections(slot)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var l []string
+		for _, s := range secs {
+			l = append(l, s.Kind+" "+s.Label)
+		}
+		return l
+	}
+	want := []string{
+		"notes Slot 0: 'TEST', 2 blocks",
+		"toc Sector 1: TOC entries of blocks 5-6",
+		"data Blocks 5-6: note 0 'TEST', parts 2-1 of 2",
+	}
+	if got := labels(0); !slices.Equal(got, want) {
+		t.Errorf("slot 0:\n got %q\nwant %q", got, want)
+	}
+
+	// The backup TOC differs at slot 1's block only (it is free there), so
+	// only slot 1 shows the backup's entry, decoded on its own.
+	img.Data[2*BlockSize+2*7+1] = blockEmpty
+	want = []string{
+		"notes Slot 1: 'TEST', 1 block",
+		"toc Sector 1: TOC entry of block 7",
+		"toc Sector 2: backup TOC (bad checksum) entry of block 7",
+		"data Block 7: note 1 'TEST', part 1 of 1",
+	}
+	if got := labels(1); !slices.Equal(got, want) {
+		t.Errorf("slot 1 with a differing backup:\n got %q\nwant %q", got, want)
+	}
+	secs, _ := img.NoteSections(1)
+	if f := secs[2].Fields[0]; f.Value != "differs from the TOC in use (sector 1)" || f.Fields[0].Value != "free" {
+		t.Errorf("differing backup entry: %q, %+v", f.Value, f.Fields)
+	}
+	if got := labels(2); len(got) != 3 {
+		t.Errorf("slot 2 should not show the backup: %q", got)
+	}
+
+	// Slot 2's chain broken: only its entry.
+	img.noteHeader(2)[7] = 0
+	if got := labels(2); len(got) != 1 || got[0] != "notes Slot 2: 'TEST', damaged: broken block chain" {
+		t.Errorf("damaged: %q", got)
+	}
+	if _, err := img.NoteSections(3); !errors.Is(err, ErrSlotEmpty) {
+		t.Errorf("free slot: %v", err)
+	}
+	if _, err := img.NoteSections(16); !errors.Is(err, ErrBadSlot) {
+		t.Errorf("slot 16: %v", err)
+	}
+}
