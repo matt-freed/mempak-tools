@@ -30,6 +30,7 @@ mempak ls [-v] PAKFILE                                    List notes
 mempak rm PAKFILE SLOT                                    Delete a note
 mempak mv PAKFILE FROM TO                                 Move a note to another slot (swaps if TO is occupied)
 mempak extract PAKFILE SLOT OUTFILE                       Export a note to a note file
+mempak extract --all [-o] PAKFILE [DIR]                   Export every note into a directory
 mempak inspect pak [-f] [-s N] PAKFILE [SECTION]          Show an image's layout, then hex dump it by section
 mempak inspect note [-f] NOTEFILE                         Show a note file's name, codes and size, then hex dump it
 mempak insert [-s N [-o]] PAKFILE NOTEFILE                Import a note file
@@ -82,6 +83,8 @@ Note slots are numbered 0–15, as shown by `mempak ls`.
 | `inspect pak PAKFILE SECTION` | Show only one section, without the layout: `id` (sector 0), `toc` (the TOC and its backup), `notes` (the note table) or `data` (the data blocks). Works with or without `-f`. |
 | `inspect pak -s, --slot N` | Show only what belongs to the note in slot N: its note-table entry, its TOC entries (the backup TOC's too, where they differ from the TOC in use) and its data blocks. Combine with `-f`, and with SECTION (`toc`, `notes` or `data`) to narrow it further. A damaged note shows only its note-table entry, since its blocks can't be found. |
 | `inspect note -f, --fields` | Show the note file's 32-byte header field by field (game code, publisher, start inode, status, extension, name), each followed by its bytes and labelled with what they mean where that is known, instead of as one dump. |
+| `extract -a, --all` | Export every note into DIR (created if needed; the current directory if DIR is not given), each named after its slot and name, such as `05-MARIO KART 64.note`. Characters that some file systems reject (`/ \ : * ? " < > \|`) become `_`. Damaged notes are skipped with a warning, and the command then exits with an error once the others are written. |
+| `extract -o, --overwrite` | With `--all`, replace note files that already exist in DIR. Without it, if any would be replaced, nothing is written. |
 | `insert -s, --slot N` | Write the note to slot N. If the slot already holds a note, you are asked before it is replaced. |
 | `insert -o, --overwrite` | With `-s`, replace an existing note without asking. |
 

@@ -428,6 +428,31 @@ func TestCharset(t *testing.T) {
 	}
 }
 
+func TestNoteFileName(t *testing.T) {
+	cases := []struct {
+		slot int
+		name []byte // N64 characters, padded with 0x00
+		ext  byte
+		want string
+	}{
+		{5, []byte{0x2d, 0x1e, 0x2c, 0x2d}, 0, "05-TEST.note"},
+		{12, []byte{0x2d, 0x1e, 0x2c, 0x2d}, 0x1a, "12-TEST.A.note"},
+		{0, []byte{0x1a, 0x0f, 0x1b}, 0, "00-A B.note"},                      // inner space kept
+		{1, []byte{0x1a, 0x3d, 0x1b, 0x3e, 0x40, 0x35}, 0, "01-A_B___.note"}, // / : ? "
+		{2, []byte{0x0f, 0x3c, 0x1a, 0x3c}, 0, "02-A.note"},                  // leading space and dots
+		{3, nil, 0, "03.note"},
+		{15, []byte{0x3c, 0x3c}, 0, "15.note"},
+	}
+	for _, c := range cases {
+		n := Note{Slot: c.slot}
+		copy(n.Header[0x10:], c.name)
+		n.Header[0x0C] = c.ext
+		if got := n.FileName(); got != c.want {
+			t.Errorf("slot %d name % x: FileName() = %q, want %q", c.slot, c.name, got, c.want)
+		}
+	}
+}
+
 // TestFormatTOC checks that a blank TOC matches factory paks: reserved entries
 // 0-4 are 0, every data entry is free, and the checksum (0x71) is the same
 // whether it is summed over entries 5-127 or over every byte from offset 2.

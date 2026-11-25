@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -218,12 +219,33 @@ func newMvCmd() *cobra.Command {
 }
 
 func newExtractCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "extract PAKFILE SLOT OUTFILE",
-		Short: "Export a note to a note file",
-		Long:  "Export the note in slot SLOT (0-15, as shown by 'mempak ls') to a standalone note file.",
-		Args:  args(cobra.ExactArgs(3)),
+	var all, overwrite bool
+	cmd := &cobra.Command{
+		Use:   "extract PAKFILE SLOT OUTFILE\n  mempak extract --all [-o] PAKFILE [DIR]",
+		Short: "Export notes to note files",
+		Long: "Export the note in slot SLOT (0-15, as shown by 'mempak ls') to a standalone note file.\n\n" +
+			"With --all, export every note into DIR (created if needed), or into the\n" +
+			"current directory if DIR is not given. Each file is named after the note's\n" +
+			"slot and name, such as '05-MARIO KART 64.note'. Damaged notes are skipped and\n" +
+			"the command then fails. Existing files are not replaced unless --overwrite is\n" +
+			"given; if any would be, nothing is written.",
+		Args: args(func(cmd *cobra.Command, a []string) error {
+			if all {
+				return cobra.RangeArgs(1, 2)(cmd, a)
+			}
+			return cobra.ExactArgs(3)(cmd, a)
+		}),
 		RunE: func(cmd *cobra.Command, a []string) error {
+			if all {
+				dir := "."
+				if len(a) == 2 {
+					dir = a[1]
+				}
+				return extractAll(a[0], dir, overwrite)
+			}
+			if overwrite {
+				return usagef("--overwrite needs --all")
+			}
 			slot, err := parseSlot(a[1])
 			if err != nil {
 				return err
@@ -243,6 +265,77 @@ func newExtractCmd() *cobra.Command {
 			return nil
 		},
 	}
+	f := cmd.Flags()
+	f.BoolVarP(&all, "all", "a", false, "export every note into a directory")
+	f.BoolVarP(&overwrite, "overwrite", "o", false, "with --all, replace existing note files")
+	return cmd
+}
+
+// extractAll exports every readable note in the image at path to dir.
+func extractAll(path, dir string, overwrite bool) error {
+	img, err := loadImage(path)
+	if err != nil {
+		return err
+	}
+	if _, err := img.FreeBlocks(); err != nil {
+		if errors.Is(err, mempak.ErrMultiBank) {
+			return err
+		}
+		return fmt.Errorf("'%s' is not a valid mempak image (not formatted or corrupted)", path)
+	}
+
+	type export struct {
+		slot int
+		file string
+		data []byte
+	}
+	var exports []export
+	var exists []string
+	damaged := 0
+	for slot := range mempak.NumNotes {
+		n, err := img.Note(slot)
+		if err != nil || !n.Used {
+			continue
+		}
+		if !n.Valid {
+			fmt.Fprintf(os.Stderr, "Skipping note %d '%s': damaged (broken block chain)\n", slot, n.Name())
+			damaged++
+			continue
+		}
+		data, err := img.ExportNote(slot)
+		if err != nil {
+			return fmt.Errorf("could not export note %d: %w", slot, err)
+		}
+		file := filepath.Join(dir, n.FileName())
+		if _, err := os.Lstat(file); err == nil {
+			exists = append(exists, file)
+		}
+		exports = append(exports, export{slot, file, data})
+	}
+	if len(exists) > 0 && !overwrite {
+		return fmt.Errorf("not replacing existing files (use --overwrite): '%s'", strings.Join(exists, "', '"))
+	}
+
+	if len(exports) > 0 {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return err
+		}
+	}
+	for _, e := range exports {
+		if err := os.WriteFile(e.file, e.data, 0o644); err != nil {
+			return err
+		}
+		fmt.Fprintf(stdout, "Exported note %d to '%s'\n", e.slot, e.file)
+	}
+	plural := "s"
+	if len(exports) == 1 {
+		plural = ""
+	}
+	fmt.Fprintf(stdout, "Exported %d note%s to '%s'\n", len(exports), plural, dir)
+	if damaged > 0 {
+		return fmt.Errorf("%d damaged note(s) skipped; 'mempak repair' can remove them", damaged)
+	}
+	return nil
 }
 
 func newInsertCmd() *cobra.Command {

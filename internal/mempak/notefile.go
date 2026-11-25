@@ -5,6 +5,8 @@ package mempak
 
 import (
 	"errors"
+	"fmt"
+	"strings"
 )
 
 // Note files use the format of bryc's mempak editor
@@ -60,4 +62,23 @@ func ReadNoteFile(b []byte) (Note, []byte, error) {
 	n := Note{Slot: -1, Blocks: len(data) / BlockSize, Used: true, Valid: true}
 	copy(n.Header[:], b)
 	return n, data, nil
+}
+
+// FileName returns a file name for the note's note file: its slot as two
+// digits, a dash and its name, such as "05-MARIO KART 64.note". The slot
+// keeps names unique, even for two notes with the same name. Characters that
+// some file systems reject (/ \ : * ? " < > |) become '_', and leading or
+// trailing spaces and dots are dropped (Windows drops trailing ones itself).
+func (n *Note) FileName() string {
+	name := strings.Map(func(r rune) rune {
+		if strings.ContainsRune(`/\:*?"<>|`, r) {
+			return '_'
+		}
+		return r
+	}, n.Name())
+	name = strings.Trim(name, " .")
+	if name == "" {
+		return fmt.Sprintf("%02d.note", n.Slot)
+	}
+	return fmt.Sprintf("%02d-%s.note", n.Slot, name)
 }

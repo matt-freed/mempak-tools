@@ -192,6 +192,25 @@ if "$MEMPAK" extract pak.mpk 3 bad.note >/dev/null 2>&1; then fail "extract of e
 if "$MEMPAK" extract pak.mpk 16 bad.note >/dev/null 2>&1; then fail "extract of slot 16 should fail"; fi
 pass "extract"
 
+# extract --all: slot 0 and slot 5 both hold TEST, so names need the slot
+"$MEMPAK" extract --all pak.mpk notes > extract.txt || fail "extract --all failed"
+same_file test.note "notes/00-TEST.note" || fail "extract --all: slot 0 differs from original"
+same_file test.note "notes/05-TEST.note" || fail "extract --all: slot 5 differs from original"
+[ "$(ls notes | wc -l | tr -d ' ')" = 2 ] || fail "extract --all: expected 2 files"
+grep -q "^Exported 2 notes to 'notes'$" extract.txt || fail "extract --all: wrong summary"
+if "$MEMPAK" extract --all pak.mpk notes >/dev/null 2>&1; then fail "extract --all should not replace existing files"; fi
+"$MEMPAK" extract --all --overwrite pak.mpk notes > /dev/null || fail "extract --all --overwrite failed"
+rc=0; "$MEMPAK" extract --overwrite pak.mpk 5 out.note >/dev/null 2>&1 || rc=$?
+[ "$rc" = 2 ] || fail "extract --overwrite without --all should be a usage error (exit 2), got $rc"
+rc=0; "$MEMPAK" extract --all pak.mpk 5 notes >/dev/null 2>&1 || rc=$?
+[ "$rc" = 2 ] || fail "extract --all with a slot should be a usage error (exit 2), got $rc"
+"$MEMPAK" extract --all blank.mpk empty | grep -q "^Exported 0 notes to 'empty'$" || fail "extract --all of a blank image"
+[ ! -e empty ] || fail "extract --all of a blank image should not create the directory"
+mkdir here && (cd here && "$MEMPAK" extract --all ../pak.mpk > ../extract.txt) || fail "extract --all without DIR failed"
+same_file test.note "here/05-TEST.note" || fail "extract --all without DIR: should export to the current directory"
+grep -q "^Exported note 5 to '05-TEST.note'$" extract.txt || fail "extract --all without DIR: wrong file path shown"
+pass "extract --all"
+
 # inspect a note file
 "$MEMPAK" inspect note test.note > inspect.txt || fail "inspect note failed"
 grep -q "Name:      TEST" inspect.txt || fail "inspect note: wrong name"
@@ -260,6 +279,11 @@ grep -q "damaged" ls.txt || fail "repair: setup should leave a damaged note"
 grep -q "Run 'mempak repair rep.mpk'" ls.txt || fail "ls: damaged image should recommend repair"
 if echo n | "$MEMPAK" repair rep.mpk >/dev/null 2>&1; then fail "repair: declining should fail"; fi
 same_file rep.mpk rep-damaged.mpk || fail "repair: declining should change nothing"
+rc=0; "$MEMPAK" extract --all rep-damaged.mpk dmgnotes >/dev/null 2>extract.txt || rc=$?
+[ "$rc" = 1 ] || fail "extract --all with a damaged note should exit 1, got $rc"
+grep -q "Skipping note 0 'TEST': damaged (broken block chain)" extract.txt || fail "extract --all: damaged note not reported"
+same_file test.note "dmgnotes/01-TEST.note" || fail "extract --all: readable note not exported past a damaged one"
+[ ! -e dmgnotes/00-TEST.note ] || fail "extract --all: damaged note should not be exported"
 [ ! -e rep.mpk.bak ] || fail "repair: declining should not write a backup"
 "$MEMPAK" repair -y rep.mpk > repair.txt || fail "repair -y failed"
 grep -q "Note 0 'TEST' is damaged" repair.txt || fail "repair: damaged note not reported"
