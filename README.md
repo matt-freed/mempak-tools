@@ -35,6 +35,7 @@ mempak inspect note [-f] NOTEFILE                         Show a note file's nam
 mempak insert [-s N [-o]] PAKFILE NOTEFILE                Import a note file
 mempak format OUTFILE                                     Create an empty image
 mempak repair [-y] PAKFILE                                Repair a damaged image (keeps PAKFILE.bak)
+mempak defrag PAKFILE                                     Pack notes together, cosmetic only (keeps PAKFILE.bak)
 ```
 
 Run `mempak COMMAND --help` or `mempak adapter COMMAND --help` for each command's options.
@@ -121,6 +122,27 @@ mempak adapter read pak.mpk
 mempak repair pak.mpk
 mempak adapter write --verify pak.mpk
 ```
+
+### Defragmenting an image
+
+`mempak defrag PAKFILE` tidies an image, in place:
+
+- **Notes move up to the lowest slots**, keeping their order (slot numbers shown
+  by `ls` can change).
+- **Note data is packed** into contiguous blocks from block 5, in slot order,
+  each note linked in ascending order.
+- **Free blocks and unused slots are zeroed.**
+
+The original file is first saved as `PAKFILE.bak`; if that file already exists,
+`defrag` stops. A damaged image is refused, so run `mempak repair` first.
+
+**This is purely cosmetic and won't make anything faster.** The pak is
+random-access memory and games follow a note's block chain wherever it goes. A
+defragmented image is just tidier to look at with `mempak inspect pak`.
+
+**Caution: free blocks are zeroed.** Deleting a note only marks its blocks free,
+so free blocks can still hold the data of old deleted saves. `defrag` erases that
+data from the image. Only `PAKFILE.bak` keeps a copy.
 
 ### Example
 

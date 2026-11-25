@@ -47,6 +47,7 @@ uses the same 32-byte unit.
 
 The SRAM can be accessed at any address, so a note's blocks don't need to be
 next to each other or in order. The filesystem has no notion of defragmenting.
+This tool's `defrag` command packs notes anyway, for tidiness only (section 6).
 
 ### Larger (banked) paks
 
@@ -481,6 +482,41 @@ Removed notes and freed blocks lose their data, so the command lists the
 repairs and asks before changing anything (`-y` skips the question). It first
 copies the original file, byte for byte, to `PAKFILE.bak`, and refuses to run
 if that file already exists.
+
+### Defragment
+
+`mempak defrag PAKFILE` rewrites the filesystem so the notes are packed
+together:
+
+1. **Refuse damage.** Stop, changing nothing, if a note is damaged or a block is
+   marked used without belonging to a readable note (run `repair` first), or if
+   two notes' chains share a block.
+2. **Compact the slots.** The notes move up to the lowest slots, keeping their
+   order: if slot 2 is empty, the note in slot 3 moves to slot 2, and so on.
+   Slot numbers shown by `ls` can change.
+3. **Pack the blocks.** In that slot order, each note's data is copied, in
+   chain order, into the next free blocks from `0x05` up. Each note's blocks
+   are contiguous and **linked in ascending order**, as `insert` links them.
+   For example, notes of 2 and 3 blocks become `5 → 6 → end` and
+   `7 → 8 → 9 → end`.
+4. Write each header **as it was**, except bytes `0x06`–`0x07`, which become
+   the new start inode.
+5. **Zero** the headers of the unused slots and every free block after the
+   last note. This clears the old copies of notes that moved, and any data
+   left behind by deleted notes.
+6. Write the TOC (alternate first).
+
+If the result is identical to the image, which is already defragmented, the
+file is left alone. Otherwise the original is first copied, byte for byte, to
+`PAKFILE.bak`, and the command refuses to run if that file already exists.
+
+**Defragmenting has no effect on performance; it is purely cosmetic.** The
+pak's SRAM is random-access, so scattered blocks cost nothing to read, and
+games follow a note's chain wherever it goes. Nintendo's library finds a note
+by its game code, publisher code and name, not its slot (`osPfsFindFile`), so
+moving slots doesn't matter to games either. What defragmenting does give is a
+tidier image: `inspect pak` shows one run of blocks per note, the blocks read
+back in note-file order, and the free space is one zeroed run at the end.
 
 ## 7. Image files
 

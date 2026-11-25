@@ -256,6 +256,43 @@ if "$MEMPAK" repair -y rep.mpk >/dev/null 2>&1; then fail "repair: should refuse
 same_file rep.mpk rep-damaged.mpk || fail "repair: refusing should change nothing"
 pass "repair"
 
+# defrag: notes move up to the lowest slots and blocks, and the original is kept as .bak
+"$MEMPAK" format frag.mpk >/dev/null
+"$MEMPAK" insert frag.mpk test.note >/dev/null         # slot 0, blocks 5-6
+"$MEMPAK" insert -s 2 frag.mpk test.note >/dev/null    # slot 2, blocks 7-8
+"$MEMPAK" insert -s 3 frag.mpk test.note >/dev/null    # slot 3, blocks 9-10
+"$MEMPAK" rm frag.mpk 0 >/dev/null
+cp frag.mpk frag-before.mpk
+"$MEMPAK" defrag frag.mpk > defrag.txt || fail "defrag failed"
+grep -q "^Note 2 -> 0 'TEST': blocks 7-8 -> 5-6$" defrag.txt || fail "defrag: move of note 2 not reported"
+grep -q "^Note 3 -> 1 'TEST': blocks 9-10 -> 7-8$" defrag.txt || fail "defrag: move of note 3 not reported"
+grep -q "A backup of the original file will be created first: 'frag.mpk.bak'" defrag.txt || fail "defrag: backup not announced"
+grep -q "Defragmented 'frag.mpk': 2 notes in blocks 5-8, 119 free blocks zeroed" defrag.txt || fail "defrag: summary missing"
+same_file frag.mpk.bak frag-before.mpk || fail "defrag: backup should hold the original file"
+"$MEMPAK" ls frag.mpk > ls.txt
+grep -q "Blocks used: 4 / 123" ls.txt || fail "defrag: used blocks should not change"
+grep -q "Note  0: TEST" ls.txt || fail "defrag: note should move up to slot 0"
+grep -q "Note  1: TEST" ls.txt || fail "defrag: note should move up to slot 1"
+grep -q "Note  2: Free" ls.txt || fail "defrag: slot 2 should be free"
+for s in 0 1; do
+	"$MEMPAK" extract frag.mpk $s frag$s.note >/dev/null
+	same_file frag$s.note test.note || fail "defrag: note $s data changed"
+done
+cp frag.mpk frag-after.mpk
+rm frag.mpk.bak
+"$MEMPAK" defrag frag.mpk | grep -q "is already defragmented" || fail "defrag: second run should do nothing"
+same_file frag.mpk frag-after.mpk || fail "defrag: second run changed the image"
+[ ! -e frag.mpk.bak ] || fail "defrag: no backup when nothing changes"
+cp frag-before.mpk frag2.mpk
+touch frag2.mpk.bak
+if "$MEMPAK" defrag frag2.mpk >/dev/null 2>&1; then fail "defrag: should refuse to overwrite an existing backup"; fi
+same_file frag2.mpk frag-before.mpk || fail "defrag: refusing for the backup should change nothing"
+cp rep-damaged.mpk frag3.mpk
+if "$MEMPAK" defrag frag3.mpk 2> err.txt >/dev/null; then fail "defrag: damaged image should be refused"; fi
+grep -q "run 'mempak repair' first" err.txt || fail "defrag: damaged image should point to repair"
+same_file frag3.mpk rep-damaged.mpk || fail "defrag: damaged image changed"
+pass "defrag"
+
 # argument validation
 if "$MEMPAK" rm pak.mpk abc >/dev/null 2>&1; then fail "non-numeric note id should be rejected"; fi
 if "$MEMPAK" format -f bogus x.mpk >/dev/null 2>&1; then fail "unknown flag should be rejected"; fi
@@ -264,6 +301,7 @@ if "$MEMPAK" nosuchcmd >/dev/null 2>&1; then fail "unknown command should fail";
 "$MEMPAK" adapter --help >/dev/null
 "$MEMPAK" adapter read --help >/dev/null
 "$MEMPAK" repair --help >/dev/null
+"$MEMPAK" defrag --help >/dev/null
 pass "argument handling"
 
 echo "All offline tests passed"

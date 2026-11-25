@@ -249,6 +249,103 @@ func newInsertCmd() *cobra.Command {
 	return cmd
 }
 
+func newDefragCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "defrag PAKFILE",
+		Short: "Defragment an image",
+		Long: "Defragment a mempak image, in place:\n" +
+			"  - notes move up to the lowest slots, keeping their order (slot numbers\n" +
+			"    shown by 'mempak ls' can change)\n" +
+			"  - their data is packed from block 5 up in slot order, each note in\n" +
+			"    contiguous blocks linked in ascending order\n" +
+			"  - free blocks and unused slots are zeroed\n\n" +
+			"This is purely cosmetic: it doesn't make the pak any faster. Games follow a\n" +
+			"note's block chain wherever it goes, and the pak has no seek time.\n\n" +
+			"The original file is first copied to PAKFILE.bak, which must not exist yet.\n" +
+			"A damaged image is refused; run 'mempak repair' first.",
+		Args: args(cobra.ExactArgs(1)),
+		RunE: func(cmd *cobra.Command, a []string) error {
+			path := a[0]
+			orig, err := os.ReadFile(path)
+			if err != nil {
+				return fmt.Errorf("could not load mempak file '%s': %w", path, err)
+			}
+			img := mempak.Decode(orig)
+			if img.WrongSize() {
+				return fmt.Errorf("cannot defragment '%s': %w", path, mempak.ErrWrongSize)
+			}
+			report, err := img.Defrag()
+			if err != nil {
+				return fmt.Errorf("cannot defragment '%s': %w", path, err)
+			}
+			if !report.Changed {
+				fmt.Fprintf(stdout, "'%s' is already defragmented\n", path)
+				return nil
+			}
+			backup := path + ".bak"
+			if _, err := os.Lstat(backup); err == nil {
+				return fmt.Errorf("backup file '%s' already exists; move it away first", backup)
+			}
+
+			for _, m := range report.Notes {
+				if !m.Moved() {
+					continue
+				}
+				slot := fmt.Sprint(m.OldSlot)
+				if m.NewSlot != m.OldSlot {
+					slot = fmt.Sprintf("%d -> %d", m.OldSlot, m.NewSlot)
+				}
+				fmt.Fprintf(stdout, "Note %s '%s': blocks %s -> %s\n", slot, m.Name,
+					blockRanges(m.OldBlocks), blockRange(m.NewFirst, len(m.OldBlocks)))
+			}
+			fmt.Fprintf(stdout, "A backup of the original file will be created first: '%s'\n", backup)
+			if err := writeBackup(path, backup, orig); err != nil {
+				return err
+			}
+			if err := saveImage(img, path); err != nil {
+				return err
+			}
+			where := ""
+			if report.UsedBlocks > 0 {
+				where = " in blocks " + blockRange(5, report.UsedBlocks)
+			}
+			fmt.Fprintf(stdout, "Defragmented '%s': %d notes%s, %d free blocks zeroed (original saved as '%s')\n",
+				path, len(report.Notes), where, report.FreeBlocks, backup)
+			return nil
+		},
+	}
+}
+
+// blockRange formats n blocks starting at first as "5-8", or "5" for one.
+func blockRange(first, n int) string {
+	if n == 1 {
+		return fmt.Sprint(first)
+	}
+	return fmt.Sprintf("%d-%d", first, first+n-1)
+}
+
+// blockRanges formats a chain as its runs of consecutive blocks, such as
+// "40-42, 9". A reverse-linked run is written high to low ("12-8").
+func blockRanges(blocks []int) string {
+	var parts []string
+	for i := 0; i < len(blocks); {
+		j, step := i+1, 0
+		if j < len(blocks) && (blocks[j] == blocks[i]+1 || blocks[j] == blocks[i]-1) {
+			step = blocks[j] - blocks[i]
+			for j < len(blocks) && blocks[j] == blocks[j-1]+step {
+				j++
+			}
+		}
+		if j-i == 1 {
+			parts = append(parts, fmt.Sprint(blocks[i]))
+		} else {
+			parts = append(parts, fmt.Sprintf("%d-%d", blocks[i], blocks[j-1]))
+		}
+		i = j
+	}
+	return strings.Join(parts, ", ")
+}
+
 func newFormatCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "format OUTFILE",
