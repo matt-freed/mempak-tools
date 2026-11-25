@@ -1,18 +1,17 @@
-# mempak
+# mempak tools
 
-A small command-line tool for N64 Controller Paks (mempaks) using a
-[raphnet](https://www.raphnet.net/) USB adapter. It can read, write and erase a
-pak through the adapter, and manage the saves (notes) inside pak image files.
+A small command-line tool for N64 Controller Paks (mempaks). It does two separate jobs:
 
-This is a focused extraction of the mempak features from raphnet's
-[gcn64tools](https://www.raphnet.net/programmation/gcn64tools/index_en.php), ported to Go.
-The GUI and support for other controllers and accessories have been removed.
+- **Adapter tools** (`mempak adapter …`): read, write and erase real memory pak hardware through a
+  [raphnet](https://www.raphnet.net/) USB adapter, copying it to or from a `.mpk` image file.
+  - This is a focused extraction of the mempak features from raphnet's [gcn64tools](https://www.raphnet.net/programmation/gcn64tools/index_en.php), ported to Go. The GUI and support for other controllers and accessories have been removed.
+  - Why: If you only need the mempak functionality of the adapter, this Go port provides easier cross-compilation and a single static binary, with no additional libraries to install. 
+- **Offline tools** (every other command): work on `.mpk` image files on your computer,
+  with no adapter needed. List, extract, insert and delete saves (notes), create blank
+  images, inspect an image byte by byte, and repair or defragment a damaged one.
 
-Why:
- - If you only need the mempak functionality of the adapter, this Go port provides easier cross-compilation and a single static binary, with no additional libraries to install. 
- - A simpler focused CLI with some enhancements/additional features
- - Several bug fixes for a closer adherence to the n64 manual spec
- - Mostly, a fun project for me to learn about n64 mempaks
+The two fit together: read a pak to an image, edit the image offline, and write it back.
+The offline tools work on any raw 32 KiB `.mpk` image, whatever made it.
 
 Many thanks to raphnet for designing the adapter hardware and its firmware, and for releasing gcn64tools as open source. 
 
