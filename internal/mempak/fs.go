@@ -394,6 +394,29 @@ func (img *Image) DeleteNote(slot int) error {
 	return nil
 }
 
+// MoveNote moves the note in slot from to slot to. If to holds a note, the
+// two notes swap slots. Only the two 32-byte headers are exchanged: each
+// header's inode still points to the same blocks, so no data moves and the
+// TOC is unchanged. A damaged note can be moved too, since its chain is never
+// followed. Moving a note to its own slot changes nothing.
+func (img *Image) MoveNote(from, to int) error {
+	if from < 0 || from >= NumNotes || to < 0 || to >= NumNotes {
+		return ErrBadSlot
+	}
+	if _, err := img.validTOC(); err != nil {
+		return err
+	}
+	if !slotUsed(img.noteHeader(from)) {
+		return ErrSlotEmpty
+	}
+	var tmp [noteHeaderSize]byte
+	a, b := img.noteHeader(from), img.noteHeader(to)
+	copy(tmp[:], a)
+	copy(a, b)
+	copy(b, tmp[:])
+	return nil
+}
+
 // InsertNote stores a note with the given 32-byte header and data, which
 // must be a whole number of blocks.
 //

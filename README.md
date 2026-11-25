@@ -28,6 +28,7 @@ mempak adapter erase [OPTIONS] [-y] [--fill-ff]           Erase the mempak
 
 mempak ls [-v] PAKFILE                                    List notes
 mempak rm PAKFILE SLOT                                    Delete a note
+mempak mv PAKFILE FROM TO                                 Move a note to another slot (swaps if TO is occupied)
 mempak extract PAKFILE SLOT OUTFILE                       Export a note to a note file
 mempak inspect pak [-f] [-s N] PAKFILE [SECTION]          Show an image's layout, then hex dump it by section
 mempak inspect note [-f] NOTEFILE                         Show a note file's name, codes and size, then hex dump it
@@ -129,7 +130,7 @@ mempak adapter write --verify pak.mpk
 `mempak defrag PAKFILE` tidies an image, in place:
 
 - **Notes move up to the lowest slots**, keeping their order (slot numbers shown
-  by `ls` can change).
+  by `ls` can change, so any gaps left on purpose with `mempak mv` are closed).
 - **Note data is packed** into contiguous blocks from block 5, in slot order,
   each note linked in ascending order.
 - **Free blocks and unused slots are zeroed.**

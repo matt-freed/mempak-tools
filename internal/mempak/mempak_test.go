@@ -901,3 +901,69 @@ func TestNoteSections(t *testing.T) {
 		t.Errorf("slot 16: %v", err)
 	}
 }
+
+func TestMoveNote(t *testing.T) {
+	img := New()
+	a, b := testNote(2, 1), testNote(3, 2)
+	insert(t, img, a, 0)
+	insert(t, img, b, 4)
+	toc := slices.Clone(img.Data[BlockSize : 3*BlockSize])
+	data := slices.Clone(img.Data[5*BlockSize:])
+
+	// Into a free slot.
+	if err := img.MoveNote(0, 7); err != nil {
+		t.Fatal(err)
+	}
+	if n, _ := img.Note(0); n.Used {
+		t.Fatal("slot 0 still used after move")
+	}
+	if out, _ := img.ExportNote(7); !bytes.Equal(out, a) {
+		t.Fatal("note 7 differs after move")
+	}
+
+	// Onto a used slot: the notes swap.
+	if err := img.MoveNote(4, 7); err != nil {
+		t.Fatal(err)
+	}
+	if out, _ := img.ExportNote(7); !bytes.Equal(out, b) {
+		t.Fatal("note 7 differs after swap")
+	}
+	if out, _ := img.ExportNote(4); !bytes.Equal(out, a) {
+		t.Fatal("note 4 differs after swap")
+	}
+
+	// To itself: nothing changes.
+	before := slices.Clone(img.Data[:])
+	if err := img.MoveNote(4, 4); err != nil || !bytes.Equal(before, img.Data[:]) {
+		t.Fatalf("move to own slot: %v", err)
+	}
+
+	// Only the note table changed.
+	if !bytes.Equal(toc, img.Data[BlockSize:3*BlockSize]) || !bytes.Equal(data, img.Data[5*BlockSize:]) {
+		t.Fatal("move changed the TOC or note data")
+	}
+
+	if err := img.MoveNote(0, 1); !errors.Is(err, ErrSlotEmpty) {
+		t.Errorf("move from a free slot: %v", err)
+	}
+	if err := img.MoveNote(4, NumNotes); !errors.Is(err, ErrBadSlot) {
+		t.Errorf("move to slot 16: %v", err)
+	}
+	if err := img.MoveNote(-1, 0); !errors.Is(err, ErrBadSlot) {
+		t.Errorf("move from slot -1: %v", err)
+	}
+
+	// A damaged note moves with its header, like any other.
+	damage(img, 4)
+	if err := img.MoveNote(4, 9); err != nil {
+		t.Fatal(err)
+	}
+	if n, _ := img.Note(9); !n.Used || n.Valid {
+		t.Fatalf("damaged note after move = %+v", n)
+	}
+
+	unformatted := Decode(make([]byte, Size))
+	if err := unformatted.MoveNote(0, 1); err == nil {
+		t.Error("move on an unformatted image should fail")
+	}
+}

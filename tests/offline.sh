@@ -217,6 +217,26 @@ grep -q "Blocks used: 2 / 123" ls.txt || fail "rm: expected 2 used blocks"
 if "$MEMPAK" rm pak.mpk 0 >/dev/null 2>&1; then fail "rm of a free note should fail"; fi
 pass "rm"
 
+# mv: into a free slot moves, onto a used slot swaps; only the note table changes
+"$MEMPAK" format mv.mpk >/dev/null
+"$MEMPAK" insert mv.mpk test.note >/dev/null           # slot 0
+"$MEMPAK" insert -s 2 mv.mpk test.note >/dev/null      # slot 2
+cp mv.mpk mv-before.mpk
+"$MEMPAK" mv mv.mpk 0 5 | grep -q "^Moved note 0 'TEST' to slot 5$" || fail "mv: move not reported"
+"$MEMPAK" ls mv.mpk > ls.txt
+grep -q "Note  0: Free" ls.txt || fail "mv: slot 0 should be free"
+grep -q "Note  5: TEST" ls.txt || fail "mv: note should be in slot 5"
+"$MEMPAK" mv mv.mpk 2 5 | grep -q "^Swapped note 2 'TEST' with note 5 'TEST'$" || fail "mv: swap not reported"
+"$MEMPAK" mv mv.mpk 2 0 >/dev/null || fail "mv: move back failed"   # first note back to slot 0
+"$MEMPAK" mv mv.mpk 5 2 >/dev/null || fail "mv: move back failed"   # second note back to slot 2
+same_file mv.mpk mv-before.mpk || fail "mv: moving the notes back should restore the image"
+"$MEMPAK" mv mv.mpk 2 2 | grep -q "is already in slot 2" || fail "mv: same slot should do nothing"
+same_file mv.mpk mv-before.mpk || fail "mv: same slot changed the image"
+if "$MEMPAK" mv mv.mpk 1 3 >/dev/null 2>&1; then fail "mv from a free slot should fail"; fi
+rc=0; "$MEMPAK" mv mv.mpk 0 16 >/dev/null 2>&1 || rc=$?
+[ "$rc" = 2 ] || fail "mv to slot 16 should be a usage error (exit 2), got $rc"
+pass "mv"
+
 # a file that isn't 32 KiB can be listed (with a warning) but not modified
 { cat pak.mpk; printf '\x00%.0s' {1..16}; } > big.mpk
 "$MEMPAK" ls big.mpk > ls.txt 2> err.txt || fail "ls: wrong-size file should still list"
@@ -224,6 +244,8 @@ grep -q "not 32 KiB" err.txt || fail "ls: wrong-size file should warn"
 cp big.mpk big-before.mpk
 if "$MEMPAK" rm big.mpk 0 >/dev/null 2>&1; then fail "rm: wrong-size file should not be modified"; fi
 same_file big.mpk big-before.mpk || fail "rm: wrong-size file changed"
+if "$MEMPAK" mv big.mpk 5 6 >/dev/null 2>&1; then fail "mv: wrong-size file should not be modified"; fi
+same_file big.mpk big-before.mpk || fail "mv: wrong-size file changed"
 if "$MEMPAK" convert pak.mpk x.mpk >/dev/null 2>&1; then fail "convert was removed and should fail"; fi
 pass "wrong-size image"
 

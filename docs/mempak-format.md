@@ -401,6 +401,16 @@ checksum is valid whether it is summed from entry 5 or from offset `0x02`
 
 Data sectors are not cleared.
 
+### Move a note
+
+`mempak mv PAKFILE FROM TO` swaps the 32-byte headers of slots `FROM` and `TO`.
+If `TO` was free, the note has moved; if it held a note, the two notes have
+swapped slots. Nothing else changes: each header keeps its start inode, so the
+TOC and the data sectors are untouched, and a damaged note (section 4) moves
+like any other since its chain is never followed. `FROM` must hold a note.
+Games find a note by its codes and name, not its slot (see "Defragment" below),
+so moving one only changes the order it is listed in.
+
 ### Insert a note
 
 Input: a 32-byte header, data that is a non-zero multiple of 256 bytes, and

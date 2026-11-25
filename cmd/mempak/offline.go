@@ -164,6 +164,59 @@ func newRmCmd() *cobra.Command {
 	}
 }
 
+func newMvCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "mv PAKFILE FROM TO",
+		Short: "Move a note to another slot",
+		Long: "Move the note in slot FROM to slot TO (0-15, as shown by 'mempak ls').\n" +
+			"If slot TO already holds a note, the two notes swap slots; nothing is\n" +
+			"overwritten. Only the note table changes: the notes' data stays where it is.\n" +
+			"The image file is modified in place.",
+		Args: args(cobra.ExactArgs(3)),
+		RunE: func(cmd *cobra.Command, a []string) error {
+			from, err := parseSlot(a[1])
+			if err != nil {
+				return err
+			}
+			to, err := parseSlot(a[2])
+			if err != nil {
+				return err
+			}
+			img, err := loadImage(a[0])
+			if err != nil {
+				return err
+			}
+			if img.WrongSize() {
+				return fmt.Errorf("cannot move notes in '%s': %w", a[0], mempak.ErrWrongSize)
+			}
+			src, err := img.Note(from)
+			if err != nil {
+				return fmt.Errorf("could not get note %d: %w", from, err)
+			}
+			if !src.Used {
+				return fmt.Errorf("note %d is free", from)
+			}
+			dst, err := img.Note(to)
+			if err != nil {
+				return fmt.Errorf("could not get note %d: %w", to, err)
+			}
+			if from == to {
+				fmt.Fprintf(stdout, "Note %d '%s' is already in slot %d\n", from, src.Name(), to)
+				return nil
+			}
+			if err := img.MoveNote(from, to); err != nil {
+				return fmt.Errorf("could not move note %d: %w", from, err)
+			}
+			if dst.Used {
+				fmt.Fprintf(stdout, "Swapped note %d '%s' with note %d '%s'\n", from, src.Name(), to, dst.Name())
+			} else {
+				fmt.Fprintf(stdout, "Moved note %d '%s' to slot %d\n", from, src.Name(), to)
+			}
+			return saveImage(img, a[0])
+		},
+	}
+}
+
 func newExtractCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "extract PAKFILE SLOT OUTFILE",

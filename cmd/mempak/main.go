@@ -80,6 +80,7 @@ func newRootCmd() *cobra.Command {
 		newAdapterCmd(),
 		newLsCmd(),
 		newRmCmd(),
+		newMvCmd(),
 		newExtractCmd(),
 		newInspectCmd(),
 		newInsertCmd(),
