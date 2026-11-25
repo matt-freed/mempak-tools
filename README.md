@@ -224,13 +224,16 @@ sudo udevadm control --reload-rules
 
 ## License
 
-GPL-3.0-or-later (see `LICENSE`). The code is a Go port of raphnet's gcn64tools,
-Copyright (C) 2007-2024 Raphael Assenat. The pak filesystem and CRC code are adapted from
-libdragon (public domain).
+GPL-3.0-or-later (see `LICENSE`).
 
-[libdragon](https://github.com/DragonMinded/libdragon) is an open-source SDK for N64
+Portions of the code (the adapter protocol and the original mempak commands) are a Go port
+of the mempak subset of raphnet's gcn64tools, Copyright (C) 2007-2024 Raphael Assenat. The
+pak filesystem and CRC code are adapted from libdragon (public domain). The rest, including
+the HID backends and the features added since the port (such as `inspect`, `repair` and
+`defrag`), is original to this project.
+
+[libdragon](https://github.com/n64brew/libdragon) is an open-source SDK for N64
 homebrew, written by the community as an alternative to Nintendo's official SDK
 (libultra). This tool's Controller Pak filesystem code is based on libdragon's
-`mempak.c`. So some rules in this tool, such as how blocks are allocated for
-an inserted note, are libdragon conventions rather than part of Nintendo's
-format. The [format spec](docs/mempak-format.md) marks where that applies.
+`mempak.c`. So some rules in this tool are libdragon conventions rather than
+part of Nintendo's format. The [format spec](docs/mempak-format.md) marks where that applies.
