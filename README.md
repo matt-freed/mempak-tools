@@ -35,6 +35,8 @@ mempak insert [-s N [-o]] PAKFILE NOTEFILE                Import a note file
 mempak format OUTFILE                                     Create an empty image
 mempak repair [-y] PAKFILE                                Repair a damaged image (keeps PAKFILE.bak)
 mempak defrag PAKFILE                                     Pack notes together, cosmetic only (keeps PAKFILE.bak)
+mempak serial show PAKFILE                                Show an image's serial number
+mempak serial set [--hex] PAKFILE (SERIAL | -r)           Set an image's serial number (text, hex or random)
 ```
 
 Run `mempak COMMAND --help` or `mempak adapter COMMAND --help` for each command's options.
@@ -142,6 +144,26 @@ defragmented image is just tidier to look at with `mempak inspect pak`.
 **Caution: free blocks are zeroed.** Deleting a note only marks its blocks free,
 so free blocks can still hold the data of old deleted saves. `defrag` erases that
 data from the image. Only `PAKFILE.bak` keeps a copy.
+
+### Serial numbers
+
+Each pak has a 24-byte serial number in its ID block. Games only compare it, to
+notice when a different pak is inserted, so any value works. Paks formatted from
+the same template, including every image made by `mempak format`, share one
+serial. Giving each of your paks its own lets you tell them, and their images,
+apart. `ls` shows the serial in hex, and as text when it is text.
+
+```sh
+mempak serial show pak.mpk                    # show it
+mempak serial set pak.mpk "MY PAK 1"          # text: up to 24 printable ASCII characters
+mempak serial set --hex pak.mpk 0011…77       # exactly 24 bytes as 48 hex digits
+mempak serial set -r pak.mpk                  # 24 random bytes
+```
+
+Setting the serial changes the image in place; write it back with
+`mempak adapter write` to change the pak. All four ID block copies are
+rewritten, so damaged copies are repaired at the same time. Notes are untouched.
+A game that is running when the pak's serial changes treats it as a new pak.
 
 ### Example
 

@@ -91,6 +91,9 @@ func newLsCmd() *cobra.Command {
 				fmt.Fprintln(stdout, "Mempak invalid (not formatted or corrupted)")
 				return errSilent
 			}
+			if serial, err := img.Serial(); err == nil {
+				fmt.Fprintf(stdout, "Serial: %s\n", formatSerial(serial))
+			}
 			fmt.Fprintf(stdout, "Blocks used: %d / %d\n\n", mempak.TotalBlocks-free, mempak.TotalBlocks)
 
 			for slot := range mempak.NumNotes {

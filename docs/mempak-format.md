@@ -157,7 +157,8 @@ them, and `ls` lists them among the repairs it recommends (section 6). `repair` 
 
 The ID block has device ID `0xFF`, bank count `1` and valid checksums: its
 words sum to `0x6625`, and `0xFFF2 − 0x6625 = 0x99CD`. Every pak formatted by
-this tool gets the same serial number.
+this tool gets the same serial number; `mempak serial set` gives it another
+(section 6).
 
 ## 3. Sectors 1–2: TOC
 

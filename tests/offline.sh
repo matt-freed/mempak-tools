@@ -293,6 +293,28 @@ grep -q "run 'mempak repair' first" err.txt || fail "defrag: damaged image shoul
 same_file frag3.mpk rep-damaged.mpk || fail "defrag: damaged image changed"
 pass "defrag"
 
+# serial: show, set as text, hex and random; only the ID blocks change
+"$MEMPAK" format ser.mpk >/dev/null
+"$MEMPAK" insert ser.mpk test.note >/dev/null
+"$MEMPAK" serial show ser.mpk | grep -q "^Serial: ffffffff051a5f130000000000000000ffffffffffffffff$" ||
+	fail "serial: formatted image should have the template serial"
+"$MEMPAK" serial set ser.mpk "PAK 1" >/dev/null || fail "serial: setting a text serial failed"
+"$MEMPAK" ls ser.mpk | grep -q '^Serial: 50414b203100000000000000000000000000000000000000 ("PAK 1")$' ||
+	fail "ls: should show the text serial"
+"$MEMPAK" ls ser.mpk | grep -q "Note  0: TEST" || fail "serial: note lost"
+"$MEMPAK" repair -y ser.mpk | grep -q "needs no repair" || fail "serial: ID blocks should all be intact"
+"$MEMPAK" serial set --hex ser.mpk "00:11:22:33:44:55:66:77:88:99:aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77" >/dev/null
+"$MEMPAK" serial show ser.mpk | grep -q "^Serial: 00112233445566778899aabbccddeeff0011223344556677$" ||
+	fail "serial set --hex: wrong serial"
+"$MEMPAK" serial set -r ser.mpk >/dev/null
+"$MEMPAK" serial show ser.mpk | grep -Eq "^Serial: [0-9a-f]{48}" || fail "serial set -r: no serial"
+"$MEMPAK" serial show ser.mpk | grep -q "00112233445566778899aabbccddeeff0011223344556677" && fail "serial set -r: serial unchanged"
+for bad in "set -r ser.mpk X" "set --hex ser.mpk 1234" "set ser.mpk 0123456789012345678901234" "set --hex ser.mpk" "set ser.mpk" "ser.mpk"; do
+	rc=0; "$MEMPAK" serial $bad >/dev/null 2>&1 || rc=$?
+	[ "$rc" = 2 ] || fail "serial $bad: should be a usage error (exit 2), got $rc"
+done
+pass "serial"
+
 # argument validation
 if "$MEMPAK" rm pak.mpk abc >/dev/null 2>&1; then fail "non-numeric note id should be rejected"; fi
 if "$MEMPAK" format -f bogus x.mpk >/dev/null 2>&1; then fail "unknown flag should be rejected"; fi
@@ -302,6 +324,7 @@ if "$MEMPAK" nosuchcmd >/dev/null 2>&1; then fail "unknown command should fail";
 "$MEMPAK" adapter read --help >/dev/null
 "$MEMPAK" repair --help >/dev/null
 "$MEMPAK" defrag --help >/dev/null
+"$MEMPAK" serial set --help >/dev/null
 pass "argument handling"
 
 echo "All offline tests passed"
